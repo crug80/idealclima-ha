@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "Il dispositivo è già configurato"
+      "already_configured": "Il dispositivo è già configurato",
+      "reconfigure_successful": "Riconfigurazione completata con successo"
     },
     "error": {
       "cannot_connect": "Impossibile connettersi",
@@ -40,6 +41,13 @@
         "description": "Configura un ventilconvettore Ideal Clima raggiungibile in rete tramite un gateway Modbus TCP."
       },
       "user": {
+        "description": "Scegli come il ventilconvettore Ideal Clima è collegato a Home Assistant.",
+        "menu_options": {
+          "serial": "Porta seriale (Modbus RTU)",
+          "tcp": "Modbus TCP"
+        }
+      },
+      "reconfigure": {
         "description": "Scegli come il ventilconvettore Ideal Clima è collegato a Home Assistant.",
         "menu_options": {
           "serial": "Porta seriale (Modbus RTU)",

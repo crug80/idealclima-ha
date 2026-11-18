@@ -25,7 +25,7 @@ from custom_components.idealclima.const import (
     IdealclimaModel,
 )
 from homeassistant import config_entries
-from homeassistant.const import CONF_MODEL, CONF_PORT
+from homeassistant.const import CONF_HOST, CONF_MODEL, CONF_PORT, CONF_TYPE
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
@@ -283,5 +283,116 @@ async def test_already_configured(
     flow_id = await _start_flow(hass, connection_type)
     result = await hass.config_entries.flow.async_configure(flow_id, user_input)
 
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def _start_reconfigure_flow(
+    hass: HomeAssistant, entry: MockConfigEntry, connection_type: str
+) -> str:
+    """Open the reconfigure flow, pick a connection type, and return the flow ID."""
+    result = await entry.start_reconfigure_flow(hass)
+
+    assert result["type"] is FlowResultType.MENU
+    assert result["step_id"] == "reconfigure"
+    assert result["menu_options"] == [TYPE_TCP, TYPE_SERIAL]
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": connection_type}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == connection_type
+    assert result["errors"] == {}
+
+    return result["flow_id"]
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_reconfigure_tcp_and_switch_to_serial(hass: HomeAssistant) -> None:
+    """Test reconfiguring TCP settings and switching connection type to serial."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=MOCK_TCP_ENTRY_DATA,
+        title=f"Radiantore SKUDO DC Inverter ({MOCK_UNIT_ID})",
+    )
+    entry.add_to_hass(hass)
+
+    flow_id = await _start_reconfigure_flow(hass, entry, TYPE_TCP)
+    mock_conn = MockModbusConnection()
+    seed_ikaro(mock_conn.for_unit(MOCK_UNIT_ID))
+
+    updated_tcp = {
+        CONF_MODEL: IdealclimaModel.IKARO_HW,
+        CONF_HOST: "192.168.1.200",
+        CONF_PORT: 1502,
+        CONF_UNIT_ID: MOCK_UNIT_ID,
+    }
+    with _patch_temporary_unit(mock_conn) as mock_temporary_unit:
+        result = await hass.config_entries.flow.async_configure(flow_id, updated_tcp)
+
+    mock_temporary_unit.assert_called_once_with(
+        hass, ModbusTcpParams(host="192.168.1.200", port=1502), MOCK_UNIT_ID
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == {CONF_TYPE: TYPE_TCP, **updated_tcp}
+    assert entry.title == f"Comfosplit IKARO HW ({MOCK_UNIT_ID})"
+
+    # Now switch from TCP to Serial
+    flow_id = await _start_reconfigure_flow(hass, entry, TYPE_SERIAL)
+    serial_conn = MockModbusConnection()
+    seed_skudo(serial_conn.for_unit(MOCK_UNIT_ID))
+    with _patch_temporary_unit(serial_conn) as mock_temporary_unit:
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, MOCK_SERIAL_INPUT
+        )
+
+    mock_temporary_unit.assert_called_once_with(
+        hass, ModbusSerialParams(device=MOCK_DEVICE, baudrate=9600), MOCK_UNIT_ID
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data == MOCK_SERIAL_ENTRY_DATA
+    assert entry.title == f"Radiantore SKUDO DC Inverter ({MOCK_UNIT_ID})"
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_reconfigure_errors_and_duplicate_check(hass: HomeAssistant) -> None:
+    """Test reconfigure handles validation errors, probe errors, and duplicates."""
+    entry1 = MockConfigEntry(domain=DOMAIN, data=MOCK_TCP_ENTRY_DATA)
+    entry2 = MockConfigEntry(
+        domain=DOMAIN, data={**MOCK_TCP_ENTRY_DATA, CONF_UNIT_ID: 22}
+    )
+    entry1.add_to_hass(hass)
+    entry2.add_to_hass(hass)
+
+    # Factory default unit ID 15 is rejected, then probe error, then self-keep succeeds
+    flow_id = await _start_reconfigure_flow(hass, entry1, TYPE_TCP)
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**MOCK_TCP_INPUT, CONF_UNIT_ID: FACTORY_DEFAULT_UNIT_ID}
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_UNIT_ID: "factory_default_unit_id"}
+
+    failing_conn = MockModbusConnection()
+    _seed_timeout(failing_conn)
+    with _patch_temporary_unit(failing_conn):
+        result = await hass.config_entries.flow.async_configure(flow_id, MOCK_TCP_INPUT)
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+    working_conn = MockModbusConnection()
+    seed_skudo(working_conn.for_unit(MOCK_UNIT_ID))
+    with _patch_temporary_unit(working_conn):
+        result = await hass.config_entries.flow.async_configure(flow_id, MOCK_TCP_INPUT)
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+
+    # Colliding with entry2 aborts with already_configured
+    flow_id = await _start_reconfigure_flow(hass, entry1, TYPE_TCP)
+    result = await hass.config_entries.flow.async_configure(
+        flow_id, {**MOCK_TCP_INPUT, CONF_UNIT_ID: 22}
+    )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
