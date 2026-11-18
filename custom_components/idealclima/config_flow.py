@@ -8,7 +8,11 @@ from modbus_connection import ModbusError
 import probatio
 
 from homeassistant.components.modbus import async_get_temporary_unit
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_RECONFIGURE,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 from homeassistant.const import CONF_DEVICE, CONF_HOST, CONF_MODEL, CONF_PORT, CONF_TYPE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -115,6 +119,14 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="user", menu_options=[TYPE_TCP, TYPE_SERIAL]
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the user choose how the fan coil is reached during reconfiguration."""
+        return self.async_show_menu(
+            step_id="reconfigure", menu_options=[TYPE_TCP, TYPE_SERIAL]
+        )
+
     async def async_step_tcp(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -129,6 +141,16 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
             TYPE_SERIAL, STEP_SERIAL_DATA_SCHEMA, user_input
         )
 
+    def _has_matching_entry(
+        self, match_data: Mapping[str, Any], exclude_entry_id: str
+    ) -> bool:
+        """Return whether another config entry matches the link endpoint."""
+        return any(
+            entry.entry_id != exclude_entry_id
+            and all(entry.data.get(key) == val for key, val in match_data.items())
+            for entry in self._async_current_entries()
+        )
+
     async def _async_step_link(
         self,
         connection_type: str,
@@ -136,6 +158,9 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
         user_input: dict[str, Any] | None,
     ) -> ConfigFlowResult:
         """Validate the link settings and probe the fan coil."""
+        reconfigure_entry = (
+            self._get_reconfigure_entry() if self.source == SOURCE_RECONFIGURE else None
+        )
         errors: dict[str, str] = {}
         if user_input is not None:
             unit_id = user_input[CONF_UNIT_ID]
@@ -143,22 +168,24 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors[CONF_UNIT_ID] = "factory_default_unit_id"
             else:
                 if connection_type == TYPE_TCP:
-                    self._async_abort_entries_match(
-                        {
-                            CONF_TYPE: TYPE_TCP,
-                            CONF_HOST: user_input[CONF_HOST],
-                            CONF_PORT: user_input[CONF_PORT],
-                            CONF_UNIT_ID: unit_id,
-                        }
-                    )
+                    match_data: dict[str, Any] = {
+                        CONF_TYPE: TYPE_TCP,
+                        CONF_HOST: user_input[CONF_HOST],
+                        CONF_PORT: user_input[CONF_PORT],
+                        CONF_UNIT_ID: unit_id,
+                    }
                 else:
-                    self._async_abort_entries_match(
-                        {
-                            CONF_TYPE: TYPE_SERIAL,
-                            CONF_DEVICE: user_input[CONF_DEVICE],
-                            CONF_UNIT_ID: unit_id,
-                        }
-                    )
+                    match_data = {
+                        CONF_TYPE: TYPE_SERIAL,
+                        CONF_DEVICE: user_input[CONF_DEVICE],
+                        CONF_UNIT_ID: unit_id,
+                    }
+
+                if reconfigure_entry is not None:
+                    if self._has_matching_entry(match_data, reconfigure_entry.entry_id):
+                        return self.async_abort(reason="already_configured")
+                else:
+                    self._async_abort_entries_match(match_data)
 
                 data = {CONF_TYPE: connection_type, **user_input}
                 try:
@@ -170,13 +197,25 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["base"] = "unknown"
                 else:
                     model_name = MODEL_NAMES[IdealclimaModel(data[CONF_MODEL])]
+                    title = f"{model_name} ({unit_id})"
+                    if reconfigure_entry is not None:
+                        return self.async_update_reload_and_abort(
+                            reconfigure_entry,
+                            title=title,
+                            data=data,
+                        )
                     return self.async_create_entry(
-                        title=f"{model_name} ({unit_id})",
+                        title=title,
                         data=data,
                     )
 
+        suggested_values = (
+            user_input
+            if user_input is not None
+            else (reconfigure_entry.data if reconfigure_entry is not None else None)
+        )
         return self.async_show_form(
             step_id=connection_type,
-            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested_values),
             errors=errors,
         )

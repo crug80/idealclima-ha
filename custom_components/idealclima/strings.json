@@ -1,7 +1,8 @@
 {
   "config": {
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]"
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -41,6 +42,13 @@
       },
       "user": {
         "description": "Choose how your Ideal Clima fan coil is connected to Home Assistant.",
+        "menu_options": {
+          "serial": "[%key:component::modbus::common::serial_rtu%]",
+          "tcp": "[%key:component::modbus::common::modbus_tcp%]"
+        }
+      },
+      "reconfigure": {
+        "description": "[%key:component::idealclima::config::step::user::description%]",
         "menu_options": {
           "serial": "[%key:component::modbus::common::serial_rtu%]",
           "tcp": "[%key:component::modbus::common::modbus_tcp%]"

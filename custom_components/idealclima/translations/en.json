@@ -1,7 +1,8 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Device is already configured"
+            "already_configured": "Device is already configured",
+            "reconfigure_successful": "Re-configuration was successful"
         },
         "error": {
             "cannot_connect": "Failed to connect",
@@ -40,6 +41,13 @@
                 "description": "Set up an Ideal Clima fan coil reached over the network through a Modbus TCP gateway."
             },
             "user": {
+                "description": "Choose how your Ideal Clima fan coil is connected to Home Assistant.",
+                "menu_options": {
+                    "serial": "Serial port (Modbus RTU)",
+                    "tcp": "Modbus TCP"
+                }
+            },
+            "reconfigure": {
                 "description": "Choose how your Ideal Clima fan coil is connected to Home Assistant.",
                 "menu_options": {
                     "serial": "Serial port (Modbus RTU)",
