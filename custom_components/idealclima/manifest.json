@@ -1,7 +1,7 @@
 {
   "domain": "idealclima",
   "name": "Ideal Clima",
-  "categories": ["climate.thermostats_heating"],
+  "categories": ["climate"],
   "codeowners": ["@crug80"],
   "config_flow": true,
   "connectivity": ["modbus"],
