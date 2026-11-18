@@ -1,0 +1,16 @@
+{
+  "domain": "idealclima",
+  "name": "Ideal Clima",
+  "categories": ["climate.thermostats_heating"],
+  "codeowners": ["@crug80"],
+  "config_flow": true,
+  "connectivity": ["modbus"],
+  "dependencies": ["modbus", "usb"],
+  "documentation": "https://github.com/crug80/idealclima-ha",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/crug80/idealclima-ha/issues",
+  "loggers": ["idealclima_modbus", "modbus_connection", "tmodbus"],
+  "requirements": ["idealclima-modbus==0.2.1"],
+  "version": "0.1.0"
+}

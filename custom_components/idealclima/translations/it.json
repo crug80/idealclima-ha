@@ -1,0 +1,173 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Il dispositivo è già configurato"
+    },
+    "error": {
+      "cannot_connect": "Impossibile connettersi",
+      "factory_default_unit_id": "L'indirizzo 15 è l'indirizzo di fabbrica riservato al cambio indirizzo e non può essere usato per il normale funzionamento.",
+      "unknown": "Errore imprevisto"
+    },
+    "step": {
+      "serial": {
+        "data": {
+          "baudrate": "Baud rate",
+          "device": "Porta seriale",
+          "model": "Modello",
+          "unit_id": "ID unità Modbus"
+        },
+        "data_description": {
+          "baudrate": "La velocità del bus RS485 configurata sul ventilconvettore. Il valore predefinito Ideal Clima è 9600.",
+          "device": "Seleziona una porta seriale locale o una porta condivisa in rete tramite proxy seriale.",
+          "model": "Il modello di ventilconvettore Ideal Clima collegato a questo indirizzo Modbus.",
+          "unit_id": "L'indirizzo Modbus del ventilconvettore (1–32, escluso l'indirizzo di fabbrica 15)."
+        },
+        "description": "Configura un ventilconvettore Ideal Clima collegato a una porta seriale tramite RS485."
+      },
+      "tcp": {
+        "data": {
+          "host": "Host",
+          "model": "Modello",
+          "port": "Porta",
+          "unit_id": "ID unità Modbus"
+        },
+        "data_description": {
+          "host": "Il nome host o l'indirizzo IP del dispositivo o del gateway Modbus TCP.",
+          "model": "Il modello di ventilconvettore Ideal Clima collegato a questo indirizzo Modbus.",
+          "port": "La porta Modbus TCP a cui connettersi.",
+          "unit_id": "L'indirizzo Modbus del ventilconvettore (1–32, escluso l'indirizzo di fabbrica 15)."
+        },
+        "description": "Configura un ventilconvettore Ideal Clima raggiungibile in rete tramite un gateway Modbus TCP."
+      },
+      "user": {
+        "description": "Scegli come il ventilconvettore Ideal Clima è collegato a Home Assistant.",
+        "menu_options": {
+          "serial": "Porta seriale (Modbus RTU)",
+          "tcp": "Modbus TCP"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ambient_sensor_alarm": {
+        "name": "Allarme sonda temperatura ambiente"
+      },
+      "coil_sensor_alarm": {
+        "name": "Allarme sonda temperatura batteria di scambio"
+      },
+      "motor_alarm": {
+        "name": "Allarme motore DC Inverter"
+      },
+      "power_state": {
+        "name": "Stato accensione"
+      },
+      "valve_command": {
+        "name": "Comando valvola"
+      }
+    },
+    "climate": {
+      "idealclima": {
+        "state_attributes": {
+          "fan_mode": {
+            "state": {
+              "super_silence": "Super silence"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "anti_draft_threshold": {
+        "name": "Soglia temperatura anti-spifferi"
+      },
+      "max_target_temp": {
+        "name": "Fine scala massima temperatura target"
+      },
+      "min_target_temp": {
+        "name": "Fine scala minima temperatura target"
+      },
+      "timer_off_hours": {
+        "name": "Timer spegnimento"
+      },
+      "timer_on_hours": {
+        "name": "Timer accensione"
+      }
+    },
+    "select": {
+      "temperature_unit": {
+        "name": "Unità di visualizzazione temperatura",
+        "state": {
+          "celsius": "Celsius",
+          "fahrenheit": "Fahrenheit"
+        }
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Temperatura ambiente"
+      },
+      "coil_temperature": {
+        "name": "Temperatura batteria di scambio"
+      },
+      "fan_rpm": {
+        "name": "Velocità ventilatore"
+      },
+      "running_mode": {
+        "name": "Regime operativo attivo",
+        "state": {
+          "cool": "Raffreddamento",
+          "heat": "Riscaldamento"
+        }
+      }
+    },
+    "switch": {
+      "anti_draft_enabled": {
+        "name": "Funzione anti-spifferi"
+      },
+      "fan_intermittent": {
+        "name": "Ventilazione intermittente a temperatura target"
+      },
+      "key_lock": {
+        "name": "Blocco tasti"
+      },
+      "key_lock_enabled": {
+        "name": "Abilitazione funzione blocco tasti"
+      },
+      "password_enabled": {
+        "name": "Protezione password terminale a bordo"
+      },
+      "remote_enabled_with_key_lock": {
+        "name": "Telecomando attivo con blocco tasti"
+      },
+      "sleep": {
+        "name": "Funzione sleep"
+      },
+      "super_silence_enabled": {
+        "name": "Abilitazione velocità super silence"
+      },
+      "valve_present": {
+        "name": "Presenza attuatore valvola"
+      }
+    }
+  },
+  "exceptions": {
+    "device_unreachable": {
+      "message": "Impossibile raggiungere il ventilconvettore Ideal Clima via Modbus."
+    },
+    "modbus_error": {
+      "message": "Errore Modbus durante la comunicazione con il ventilconvettore Ideal Clima."
+    },
+    "write_failed": {
+      "message": "Impossibile scrivere le impostazioni sul ventilconvettore Ideal Clima."
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "ikaro_hw": "Comfosplit IKARO HW",
+        "skudo_dc_inverter": "Radiantore SKUDO DC Inverter"
+      }
+    }
+  }
+}

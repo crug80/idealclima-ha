@@ -1,0 +1,51 @@
+[project]
+name = "idealclima-ha"
+version = "0.1.0"
+description = "Home Assistant custom integration for Ideal Clima Modbus fan coil units (Comfosplit IKARO HW and Radiantore SKUDO DC Inverter)."
+readme = "README.md"
+requires-python = ">=3.14.2"
+license = "MIT"
+authors = [
+  { name = "crug80", email = "claudio@cr-tech.it" },
+]
+dependencies = [
+  "idealclima-modbus==0.2.1",
+]
+
+[dependency-groups]
+dev = [
+  "homeassistant",
+  "pytest-homeassistant",
+  "pytest-cov>=7.0.0",
+  "ruff>=0.17.4",
+  "mypy>=1.19.0",
+  "pymodbus==3.13.1",
+  "aiousbwatcher==1.1.2",
+  "aiohasupervisor==0.11.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+ha_test_config_dir = "."
+addopts = "-p no:respx --cov=custom_components.idealclima --cov-report=term-missing --cov-fail-under=100"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ASYNC", "RUF"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["custom_components", "homeassistant"]
+combine-as-imports = true
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+ignore_missing_imports = true
+explicit_package_bases = true
+namespace_packages = true

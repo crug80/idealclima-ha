@@ -1,0 +1,173 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "factory_default_unit_id": "Address 15 is the factory default address reserved for address programming and cannot be used for normal operation.",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "step": {
+      "serial": {
+        "data": {
+          "baudrate": "[%key:component::modbus::common::baud_rate%]",
+          "device": "[%key:component::modbus::common::serial_port%]",
+          "model": "Model",
+          "unit_id": "[%key:component::idealclima::config::step::tcp::data::unit_id%]"
+        },
+        "data_description": {
+          "baudrate": "The speed of the RS485 bus, as configured on the fan coil. The Ideal Clima default is 9600.",
+          "device": "[%key:component::modbus::common::serial_port_description%]",
+          "model": "[%key:component::idealclima::config::step::tcp::data_description::model%]",
+          "unit_id": "[%key:component::idealclima::config::step::tcp::data_description::unit_id%]"
+        },
+        "description": "Set up an Ideal Clima fan coil wired to a serial port over RS485."
+      },
+      "tcp": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]",
+          "model": "Model",
+          "port": "[%key:common::config_flow::data::port%]",
+          "unit_id": "Modbus unit ID"
+        },
+        "data_description": {
+          "host": "[%key:component::modbus::common::tcp_host_description%]",
+          "model": "The Ideal Clima fan coil model connected to this Modbus address.",
+          "port": "[%key:component::modbus::common::tcp_port_description%]",
+          "unit_id": "The fan coil's Modbus unit ID (1–32, excluding the factory address 15)."
+        },
+        "description": "Set up an Ideal Clima fan coil reached over the network through a Modbus TCP gateway."
+      },
+      "user": {
+        "description": "Choose how your Ideal Clima fan coil is connected to Home Assistant.",
+        "menu_options": {
+          "serial": "[%key:component::modbus::common::serial_rtu%]",
+          "tcp": "[%key:component::modbus::common::modbus_tcp%]"
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "ambient_sensor_alarm": {
+        "name": "Ambient temperature sensor alarm"
+      },
+      "coil_sensor_alarm": {
+        "name": "Coil temperature sensor alarm"
+      },
+      "motor_alarm": {
+        "name": "DC inverter motor alarm"
+      },
+      "power_state": {
+        "name": "Power state"
+      },
+      "valve_command": {
+        "name": "Valve command"
+      }
+    },
+    "climate": {
+      "idealclima": {
+        "state_attributes": {
+          "fan_mode": {
+            "state": {
+              "super_silence": "Super silence"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "anti_draft_threshold": {
+        "name": "Anti-draft threshold temperature"
+      },
+      "max_target_temp": {
+        "name": "Maximum target temperature"
+      },
+      "min_target_temp": {
+        "name": "Minimum target temperature"
+      },
+      "timer_off_hours": {
+        "name": "Auto-off timer"
+      },
+      "timer_on_hours": {
+        "name": "Auto-on timer"
+      }
+    },
+    "select": {
+      "temperature_unit": {
+        "name": "Display temperature unit",
+        "state": {
+          "celsius": "Celsius",
+          "fahrenheit": "Fahrenheit"
+        }
+      }
+    },
+    "sensor": {
+      "ambient_temperature": {
+        "name": "Ambient temperature"
+      },
+      "coil_temperature": {
+        "name": "Coil temperature"
+      },
+      "fan_rpm": {
+        "name": "Fan speed"
+      },
+      "running_mode": {
+        "name": "Active operating regime",
+        "state": {
+          "cool": "Cooling",
+          "heat": "Heating"
+        }
+      }
+    },
+    "switch": {
+      "anti_draft_enabled": {
+        "name": "Anti-draft"
+      },
+      "fan_intermittent": {
+        "name": "Intermittent fan at target temperature"
+      },
+      "key_lock": {
+        "name": "Key lock"
+      },
+      "key_lock_enabled": {
+        "name": "Key lock function enabled"
+      },
+      "password_enabled": {
+        "name": "Onboard panel password protection"
+      },
+      "remote_enabled_with_key_lock": {
+        "name": "IR remote active with key lock"
+      },
+      "sleep": {
+        "name": "Sleep mode"
+      },
+      "super_silence_enabled": {
+        "name": "Super silence speed enabled"
+      },
+      "valve_present": {
+        "name": "Water valve actuator present"
+      }
+    }
+  },
+  "exceptions": {
+    "device_unreachable": {
+      "message": "Unable to reach the Ideal Clima fan coil over Modbus."
+    },
+    "modbus_error": {
+      "message": "Modbus error while communicating with the Ideal Clima fan coil."
+    },
+    "write_failed": {
+      "message": "Failed to write settings to the Ideal Clima fan coil."
+    }
+  },
+  "selector": {
+    "model": {
+      "options": {
+        "ikaro_hw": "Comfosplit IKARO HW",
+        "skudo_dc_inverter": "Radiantore SKUDO DC Inverter"
+      }
+    }
+  }
+}
