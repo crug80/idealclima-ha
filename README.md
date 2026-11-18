@@ -16,12 +16,14 @@ Custom integration for **Ideal Clima** hydronic fan coil units connected over **
 
 ## Installation
 
-### Option 1: HACS / Custom Repository
+### Option 1: Home Assistant Marketplace (`2026.11+`)
 
-1. Open **HACS** in Home Assistant.
-2. Open the top-right menu (`⋮`) → **Custom repositories**.
-3. Add `https://github.com/crug80/idealclima-ha` with category **Integration**.
-4. Search for **Ideal Clima**, click **Download**, and restart Home Assistant.
+1. Open **Settings** → **Marketplace** in Home Assistant (and accept the community content notice if shown).
+2. Search for **Ideal Clima** in the Marketplace catalog, or add it as a custom repository if it is not yet listed in the default catalog:
+   - Choose **Add from Link** (custom repository) and paste `https://github.com/crug80/idealclima-ha`.
+   - Connect your GitHub account if prompted (required to add custom repositories).
+3. Select **Ideal Clima** and click **Install**.
+4. Once installed, Home Assistant loads the integration so you can configure it right away; future releases are tracked under **Settings** → **Updates**.
 
 ### Option 2: Manual Installation
 
@@ -82,7 +84,7 @@ If you encounter communication or register issues:
 
 1. Go to **Settings** → **Devices & services** → **Ideal Clima**.
 2. Open the menu (`⋮`) next to each entry and select **Delete**.
-3. If installed via HACS, remove the integration from HACS; if installed manually, delete `<config>/custom_components/idealclima` and restart Home Assistant.
+3. If installed via the Marketplace, remove **Ideal Clima** from **Settings** → **Marketplace**; if installed manually, delete `<config>/custom_components/idealclima` and restart Home Assistant.
 
 ## Development & Testing
 
