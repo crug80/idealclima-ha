@@ -86,6 +86,11 @@ If you encounter communication or register issues:
 2. Open the menu (`⋮`) next to each entry and select **Delete**.
 3. If installed via the Marketplace, remove **Ideal Clima** from **Settings** → **Marketplace**; if installed manually, delete `<config>/custom_components/idealclima` and restart Home Assistant.
 
+## Modbus Register Specifications
+
+- [Comfosplit IKARO HW — Modbus RTU Specification](docs/modbus/ikaro-hw.md)
+- [Radiantore SKUDO DC Inverter — Modbus RTU Specification](docs/modbus/skudo-dc-inverter.md)
+
 ## Development & Testing
 
 ```bash
