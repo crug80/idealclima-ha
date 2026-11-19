@@ -34,6 +34,11 @@ PARALLEL_UPDATES = 1
 
 DEFAULT_MIN_TEMP = 18.0
 DEFAULT_MAX_TEMP = 30.0
+DEFAULT_FALLBACK_HEAT_TEMP = 21.0
+DEFAULT_FALLBACK_COOL_TEMP = 24.0
+FALLBACK_TEMP_MARGIN = 2.0
+MIN_VALID_AMBIENT_TEMP = 5.0
+MAX_VALID_AMBIENT_TEMP = 45.0
 
 FAN_SUPER_SILENCE = "super_silence"
 
@@ -76,6 +81,27 @@ HA_TO_SKUDO_MODE: dict[HVACMode, SkudoMode] = {
     HVACMode.FAN_ONLY: SkudoMode.FAN_ONLY,
     HVACMode.HEAT: SkudoMode.HEAT,
 }
+
+
+def _ikaro_fallback_target_temp(mode: HVACMode, ambient: float | None) -> float:
+    """Compute a safe fallback target temperature when IKARO's setpoint is invalid."""
+    if (
+        ambient is not None
+        and MIN_VALID_AMBIENT_TEMP <= ambient <= MAX_VALID_AMBIENT_TEMP
+    ):
+        raw = (
+            max(ambient + FALLBACK_TEMP_MARGIN, DEFAULT_FALLBACK_HEAT_TEMP)
+            if mode is HVACMode.HEAT
+            else min(ambient - FALLBACK_TEMP_MARGIN, DEFAULT_FALLBACK_COOL_TEMP)
+        )
+    else:
+        raw = (
+            DEFAULT_FALLBACK_HEAT_TEMP
+            if mode is HVACMode.HEAT
+            else DEFAULT_FALLBACK_COOL_TEMP
+        )
+    clamped = min(max(raw, DEFAULT_MIN_TEMP), DEFAULT_MAX_TEMP)
+    return round(clamped * 2) / 2
 
 
 async def async_setup_entry(
@@ -194,6 +220,32 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             return self.device.settings.target_temp_auto_cool
         return None
 
+    def _ikaro_fallback_temp_call(
+        self, mode: HVACMode | None
+    ) -> Awaitable[None] | None:
+        """Return a setpoint write call if IKARO lacks a valid target temp for mode."""
+        if not isinstance(self.device, IkaroHW):
+            return None
+        if mode is HVACMode.HEAT:
+            current = self.device.settings.target_temp_heat
+            if current is not None and DEFAULT_MIN_TEMP <= current <= DEFAULT_MAX_TEMP:
+                return None
+            return self.device.async_set_target_temp_heat(
+                _ikaro_fallback_target_temp(
+                    mode, self.device.readings.ambient_temperature
+                )
+            )
+        if mode in (HVACMode.COOL, HVACMode.DRY):
+            current = self.device.settings.target_temp_cool
+            if current is not None and DEFAULT_MIN_TEMP <= current <= DEFAULT_MAX_TEMP:
+                return None
+            return self.device.async_set_target_temp_cool(
+                _ikaro_fallback_target_temp(
+                    mode, self.device.readings.ambient_temperature
+                )
+            )
+        return None
+
     @override
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set a new target HVAC mode."""
@@ -208,6 +260,8 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             calls.append(self.device.async_set_mode(HA_TO_SKUDO_MODE[hvac_mode]))
 
         if not self.device.settings.power:
+            if (fallback_call := self._ikaro_fallback_temp_call(hvac_mode)) is not None:
+                calls.append(fallback_call)
             calls.append(self.device.async_set_power(True))
 
         await self._async_execute(*calls)
@@ -215,7 +269,13 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
     @override
     async def async_turn_on(self) -> None:
         """Turn the fan coil unit on."""
-        await self._async_execute(self.device.async_set_power(True))
+        calls: list[Awaitable[None]] = []
+        if isinstance(self.device, IkaroHW) and self.device.settings.mode is not None:
+            mode = IKARO_MODE_TO_HA[self.device.settings.mode]
+            if (fallback_call := self._ikaro_fallback_temp_call(mode)) is not None:
+                calls.append(fallback_call)
+        calls.append(self.device.async_set_power(True))
+        await self._async_execute(*calls)
 
     @override
     async def async_turn_off(self) -> None:
@@ -234,6 +294,7 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
         """Set a new target temperature for the active mode."""
         calls: list[Awaitable[None]] = []
         mode = self.hvac_mode
+        turn_on = False
         if (new_mode := kwargs.get(ATTR_HVAC_MODE)) is not None:
             mode = HVACMode(new_mode)
             if mode is HVACMode.OFF:
@@ -243,8 +304,7 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
                     calls.append(self.device.async_set_mode(HA_TO_IKARO_MODE[mode]))
                 else:
                     calls.append(self.device.async_set_mode(HA_TO_SKUDO_MODE[mode]))
-                if not self.device.settings.power:
-                    calls.append(self.device.async_set_power(True))
+                turn_on = not self.device.settings.power
 
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
             if mode in (HVACMode.COOL, HVACMode.DRY):
@@ -260,6 +320,9 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
                     calls.append(
                         self.device.async_set_target_temp_auto_cool(temperature)
                     )
+
+        if turn_on:
+            calls.append(self.device.async_set_power(True))
 
         if calls:
             await self._async_execute(*calls)

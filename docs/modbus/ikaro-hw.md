@@ -39,3 +39,8 @@ Extracted from *Comfosplit IKARO HW – Manuale per l'utente e per l'installator
 ## Changing the Modbus Address
 
 The Modbus address at register `28321` can be updated via function `0x10` (Write Multiple Registers). To prevent accidental overwrites, address changes are **only accepted while a jumper is installed between `1 - COM` (Red) and `2 - LOW` (Black)** on the thermostat terminal block.
+
+## Operating & Startup Notes
+
+- Before powering on the unit (`28301 = 1`), ensure the active target temperature register (`28310` for cooling, `28311` for heating) is already set far enough from ambient temperature to keep the unit active; otherwise IKARO immediately turns back off.
+- Keep registers `28301–28303` and the active target temperature register (`28310` or `28311`) properly populated for reliable operation.
