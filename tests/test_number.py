@@ -12,7 +12,7 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from . import MOCK_UNIT_ID
 
@@ -113,6 +113,48 @@ async def test_number_none_and_write_error(
 
     assert (state := hass.states.get(entity_id)) is not None
     assert state.state == STATE_UNKNOWN
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "register", "invalid_value", "unchanged_raw"),
+    [
+        pytest.param(
+            "number.radiantore_skudo_dc_inverter_21_minimum_target_temperature",
+            28309,
+            30.0,
+            180,
+            id="min_at_or_above_max",
+        ),
+        pytest.param(
+            "number.radiantore_skudo_dc_inverter_21_maximum_target_temperature",
+            28308,
+            18.0,
+            300,
+            id="max_at_or_below_min",
+        ),
+    ],
+)
+@pytest.mark.usefixtures("init_integration")
+async def test_skudo_temperature_limits_reject_crossing(
+    hass: HomeAssistant,
+    mock_connection: MockModbusConnection,
+    entity_id: str,
+    register: int,
+    invalid_value: float,
+    unchanged_raw: int,
+) -> None:
+    """Test setting min >= max or max <= min raises ServiceValidationError."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            NUMBER_DOMAIN,
+            SERVICE_SET_VALUE,
+            {ATTR_ENTITY_ID: entity_id, ATTR_VALUE: invalid_value},
+            blocking=True,
+        )
+
+    assert unit.holding[register] == unchanged_raw
 
 
 @pytest.mark.usefixtures("init_ikaro_integration")
