@@ -6,6 +6,7 @@
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "device_in_use": "This serial port is already in use with different link settings. Disable the entries using this port before changing the baud rate.",
       "factory_default_unit_id": "Address 15 is the factory default address reserved for address programming and cannot be used for normal operation.",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },

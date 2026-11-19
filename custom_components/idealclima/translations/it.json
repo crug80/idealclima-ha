@@ -6,6 +6,7 @@
     },
     "error": {
       "cannot_connect": "Impossibile connettersi",
+      "device_in_use": "Questa porta seriale è già in uso con parametri di collegamento diversi. Disabilita le integrazioni che usano questa porta prima di cambiare il baud rate.",
       "factory_default_unit_id": "L'indirizzo 15 è l'indirizzo di fabbrica riservato al cambio indirizzo e non può essere usato per il normale funzionamento.",
       "unknown": "Errore imprevisto"
     },

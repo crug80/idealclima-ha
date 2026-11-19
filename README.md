@@ -47,6 +47,8 @@ To change the **Model**, **Modbus unit ID**, **Host/Port**, **Serial port/Baud r
 2. Open the menu (`⋮`) next to the device entry and select **Reconfigure**.
 3. Pick the connection type and update the pre-filled settings.
 
+> **Note (changing serial baud rate on a port in use):** Home Assistant's shared Modbus connection manager prevents opening the same serial port with two different baud rates simultaneously (`device_in_use`). To change the baud rate on a serial line that is already active, disable the config entries currently using that port first, reconfigure them with the new baud rate, and re-enable them.
+
 ## Data Updates & Bus Sharing
 
 - **Polling interval**: both live readings (`0x04` input registers) and configuration settings (`0x03` holding registers) are polled every **15 seconds**, so changes made on the onboard panel or via IR remote are reflected in Home Assistant.
