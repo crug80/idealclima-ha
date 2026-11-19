@@ -11,11 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MODEL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.update_coordinator import (
-    DataUpdateCoordinator,
-    UpdateFailed,
-    UpdateFailedUnreachable,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     ATTR_MANUFACTURER,
@@ -65,7 +61,7 @@ class IdealclimaDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         try:
             report = await self.device.async_update()
         except (ModbusConnectionError, ModbusTimeoutError) as err:
-            raise UpdateFailedUnreachable(
+            raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="device_unreachable",
             ) from err
