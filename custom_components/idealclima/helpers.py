@@ -21,7 +21,7 @@ def create_modbus_params(
         return ModbusSerialParams(
             device=data[CONF_DEVICE], baudrate=data[CONF_BAUDRATE]
         )
-    return ModbusTcpParams(host=data[CONF_HOST], port=data[CONF_PORT])
+    return ModbusTcpParams(host=data[CONF_HOST].strip(), port=data[CONF_PORT])
 
 
 def create_device(unit: ModbusUnit, data: Mapping[str, Any]) -> IdealclimaDevice:

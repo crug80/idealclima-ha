@@ -1,5 +1,6 @@
 """Tests for the Ideal Clima config flow."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -285,6 +286,79 @@ async def test_already_configured(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_already_configured_normalized_host(hass: HomeAssistant) -> None:
+    """Test TCP host normalization prevents case/whitespace duplicates."""
+    flow_id = await _start_flow(hass, TYPE_TCP)
+    mock_conn = MockModbusConnection()
+    seed_skudo(mock_conn.for_unit(MOCK_UNIT_ID))
+
+    with _patch_temporary_unit(mock_conn):
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {**MOCK_TCP_INPUT, CONF_HOST: "  GATEWAY.local  "}
+        )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_HOST] == "gateway.local"
+
+    second_flow_id = await _start_flow(hass, TYPE_TCP)
+    result = await hass.config_entries.flow.async_configure(
+        second_flow_id, {**MOCK_TCP_INPUT, CONF_HOST: "gateway.local"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+@pytest.mark.usefixtures("mock_setup_entry")
+async def test_concurrent_flows_abort_duplicate_after_probe(
+    hass: HomeAssistant,
+) -> None:
+    """Test two concurrent flows for the same endpoint only create one entry."""
+    mock_conn = MockModbusConnection()
+    seed_skudo(mock_conn.for_unit(MOCK_UNIT_ID))
+
+    both_probing = asyncio.Event()
+    release_probe = asyncio.Event()
+    probing_count = 0
+
+    @asynccontextmanager
+    async def _blocking_temporary_unit(
+        hass: HomeAssistant,
+        params: ModbusSerialParams | ModbusTcpParams,
+        unit_id: int,
+    ) -> AsyncIterator[MockModbusUnit]:
+        nonlocal probing_count
+        probing_count += 1
+        if probing_count == 2:
+            both_probing.set()
+        await release_probe.wait()
+        yield mock_conn.for_unit(unit_id)
+
+    flow_1 = await _start_flow(hass, TYPE_TCP)
+    flow_2 = await _start_flow(hass, TYPE_TCP)
+
+    with patch(
+        "custom_components.idealclima.config_flow.async_get_temporary_unit",
+        side_effect=_blocking_temporary_unit,
+    ):
+        task_1 = asyncio.create_task(
+            hass.config_entries.flow.async_configure(flow_1, MOCK_TCP_INPUT)
+        )
+        task_2 = asyncio.create_task(
+            hass.config_entries.flow.async_configure(flow_2, MOCK_TCP_INPUT)
+        )
+        await both_probing.wait()
+        release_probe.set()
+        results = await asyncio.gather(task_1, task_2)
+
+    types = {res["type"] for res in results}
+    assert types == {FlowResultType.CREATE_ENTRY, FlowResultType.ABORT}
+    aborted = next(res for res in results if res["type"] is FlowResultType.ABORT)
+    assert aborted["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
 
 
 async def _start_reconfigure_flow(
