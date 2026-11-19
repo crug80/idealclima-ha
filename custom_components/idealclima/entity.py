@@ -1,6 +1,6 @@
 """Base entity for the Ideal Clima integration."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 
 from modbus_connection import ModbusError
 
@@ -34,14 +34,25 @@ class IdealclimaEntity(CoordinatorEntity[IdealclimaDataUpdateCoordinator]):
         else:
             self._attr_unique_id = entry_id
 
-    async def _async_execute(self, *calls: Awaitable[None]) -> None:
-        """Run one or more Modbus write calls and refresh the coordinator."""
+    async def _async_execute_locked(
+        self, *calls: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Run Modbus write callables sequentially while holding command_lock."""
+        completed = 0
         try:
             for call in calls:
-                await call
+                await call()
+                completed += 1
         except ModbusError as err:
+            if completed > 0:
+                await self.coordinator.async_refresh()
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="write_failed",
             ) from err
         await self.coordinator.async_refresh()
+
+    async def _async_execute(self, *calls: Callable[[], Awaitable[None]]) -> None:
+        """Acquire the device command lock, run writes, and refresh coordinator."""
+        async with self.coordinator.command_lock:
+            await self._async_execute_locked(*calls)

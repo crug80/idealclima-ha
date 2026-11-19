@@ -1,6 +1,7 @@
 """Climate platform for the Ideal Clima integration."""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
+from functools import partial
 from typing import Any, override
 
 from idealclima_modbus import (
@@ -238,27 +239,29 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
 
     def _ikaro_fallback_temp_call(
         self, mode: HVACMode | None
-    ) -> Awaitable[None] | None:
-        """Return a setpoint write call if IKARO lacks a valid target temp for mode."""
+    ) -> Callable[[], Awaitable[None]] | None:
+        """Return a setpoint write callable if IKARO lacks a valid target temp."""
         if not isinstance(self.device, IkaroHW):
             return None
         if mode is HVACMode.HEAT:
             current = self.device.settings.target_temp_heat
             if current is not None and DEFAULT_MIN_TEMP <= current <= DEFAULT_MAX_TEMP:
                 return None
-            return self.device.async_set_target_temp_heat(
+            return partial(
+                self.device.async_set_target_temp_heat,
                 _ikaro_fallback_target_temp(
                     mode, self.device.readings.ambient_temperature
-                )
+                ),
             )
         if mode in (HVACMode.COOL, HVACMode.DRY):
             current = self.device.settings.target_temp_cool
             if current is not None and DEFAULT_MIN_TEMP <= current <= DEFAULT_MAX_TEMP:
                 return None
-            return self.device.async_set_target_temp_cool(
+            return partial(
+                self.device.async_set_target_temp_cool,
                 _ikaro_fallback_target_temp(
                     mode, self.device.readings.ambient_temperature
-                )
+                ),
             )
         return None
 
@@ -266,55 +269,59 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set a new target HVAC mode."""
         if hvac_mode is HVACMode.OFF:
-            await self._async_execute(self.device.async_set_power(False))
+            await self._async_execute(partial(self.device.async_set_power, False))
             return
 
-        calls: list[Awaitable[None]] = []
+        calls: list[Callable[[], Awaitable[None]]] = []
         if isinstance(self.device, IkaroHW):
-            calls.append(self.device.async_set_mode(HA_TO_IKARO_MODE[hvac_mode]))
+            calls.append(
+                partial(self.device.async_set_mode, HA_TO_IKARO_MODE[hvac_mode])
+            )
         else:
-            calls.append(self.device.async_set_mode(HA_TO_SKUDO_MODE[hvac_mode]))
+            calls.append(
+                partial(self.device.async_set_mode, HA_TO_SKUDO_MODE[hvac_mode])
+            )
 
         if not self.device.settings.power:
             if (fallback_call := self._ikaro_fallback_temp_call(hvac_mode)) is not None:
                 calls.append(fallback_call)
-            calls.append(self.device.async_set_power(True))
+            calls.append(partial(self.device.async_set_power, True))
 
         await self._async_execute(*calls)
 
     @override
     async def async_turn_on(self) -> None:
         """Turn the fan coil unit on."""
-        calls: list[Awaitable[None]] = []
+        calls: list[Callable[[], Awaitable[None]]] = []
         if isinstance(self.device, IkaroHW) and self.device.settings.mode is not None:
             mode = IKARO_MODE_TO_HA[self.device.settings.mode]
             if (fallback_call := self._ikaro_fallback_temp_call(mode)) is not None:
                 calls.append(fallback_call)
-        calls.append(self.device.async_set_power(True))
+        calls.append(partial(self.device.async_set_power, True))
         await self._async_execute(*calls)
 
     @override
     async def async_turn_off(self) -> None:
         """Turn the fan coil unit off."""
-        await self._async_execute(self.device.async_set_power(False))
+        await self._async_execute(partial(self.device.async_set_power, False))
 
     @override
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set a new target fan mode."""
         await self._async_execute(
-            self.device.async_set_fan_speed(HA_TO_FAN_SPEED[fan_mode])
+            partial(self.device.async_set_fan_speed, HA_TO_FAN_SPEED[fan_mode])
         )
 
     @staticmethod
     def _skudo_auto_temp_call(
         device: SkudoDCInverter, temperature: float
-    ) -> Awaitable[None]:
-        """Return the AUTO setpoint write call matching SKUDO's running mode."""
+    ) -> Callable[[], Awaitable[None]]:
+        """Return the AUTO setpoint write callable matching SKUDO's running mode."""
         running_mode = device.readings.running_mode
         if running_mode is SkudoRunningMode.HEAT:
-            return device.async_set_target_temp_auto_heat(temperature)
+            return partial(device.async_set_target_temp_auto_heat, temperature)
         if running_mode is SkudoRunningMode.COOL:
-            return device.async_set_target_temp_auto_cool(temperature)
+            return partial(device.async_set_target_temp_auto_cool, temperature)
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="unknown_running_mode",
@@ -323,19 +330,23 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
     @override
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set a new target temperature for the active mode."""
-        calls: list[Awaitable[None]] = []
+        calls: list[Callable[[], Awaitable[None]]] = []
         mode = self.hvac_mode
         turn_on = False
         new_mode = kwargs.get(ATTR_HVAC_MODE)
         if new_mode is not None:
             mode = HVACMode(new_mode)
             if mode is HVACMode.OFF:
-                calls.append(self.device.async_set_power(False))
+                calls.append(partial(self.device.async_set_power, False))
             else:
                 if isinstance(self.device, IkaroHW):
-                    calls.append(self.device.async_set_mode(HA_TO_IKARO_MODE[mode]))
+                    calls.append(
+                        partial(self.device.async_set_mode, HA_TO_IKARO_MODE[mode])
+                    )
                 else:
-                    calls.append(self.device.async_set_mode(HA_TO_SKUDO_MODE[mode]))
+                    calls.append(
+                        partial(self.device.async_set_mode, HA_TO_SKUDO_MODE[mode])
+                    )
                 turn_on = not self.device.settings.power
 
         temperature = kwargs.get(ATTR_TEMPERATURE)
@@ -344,23 +355,28 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             and isinstance(self.device, SkudoDCInverter)
             and temperature is not None
         ):
-            if new_mode is not None:
-                if turn_on:
-                    calls.append(self.device.async_set_power(True))
-                await self._async_execute(*calls)
-                calls = []
-            calls.append(self._skudo_auto_temp_call(self.device, temperature))
-            await self._async_execute(*calls)
+            async with self.coordinator.command_lock:
+                if new_mode is not None:
+                    if turn_on:
+                        calls.append(partial(self.device.async_set_power, True))
+                    await self._async_execute_locked(*calls)
+                    calls = []
+                calls.append(self._skudo_auto_temp_call(self.device, temperature))
+                await self._async_execute_locked(*calls)
             return
 
         if temperature is not None:
             if mode in (HVACMode.COOL, HVACMode.DRY):
-                calls.append(self.device.async_set_target_temp_cool(temperature))
+                calls.append(
+                    partial(self.device.async_set_target_temp_cool, temperature)
+                )
             elif mode is HVACMode.HEAT:
-                calls.append(self.device.async_set_target_temp_heat(temperature))
+                calls.append(
+                    partial(self.device.async_set_target_temp_heat, temperature)
+                )
 
         if turn_on:
-            calls.append(self.device.async_set_power(True))
+            calls.append(partial(self.device.async_set_power, True))
 
         if calls:
             await self._async_execute(*calls)

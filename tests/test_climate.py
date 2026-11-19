@@ -1,6 +1,10 @@
 """Tests for the Ideal Clima climate platform."""
 
+import asyncio
 from datetime import timedelta
+import gc
+from unittest.mock import patch
+import warnings
 
 from freezegun.api import FrozenDateTimeFactory
 from modbus_connection import ModbusError
@@ -32,6 +36,7 @@ from homeassistant.components.climate import (
     SERVICE_TURN_ON,
     HVACMode,
 )
+from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_TEMPERATURE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -651,6 +656,136 @@ async def test_write_error_raises_home_assistant_error(
             {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_FAN_MODE: FAN_HIGH},
             blocking=True,
         )
+
+
+async def test_compound_write_first_error_no_unawaited_warning(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test failing the first write in a compound call emits no RuntimeWarning."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+    unit.fail_write(28302, ModbusError("mode write failed"))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", RuntimeWarning)
+        with pytest.raises(HomeAssistantError) as err_info:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {
+                    ATTR_ENTITY_ID: IKARO_ENTITY_ID,
+                    ATTR_HVAC_MODE: HVACMode.HEAT,
+                    ATTR_TEMPERATURE: 26.0,
+                },
+                blocking=True,
+            )
+        gc.collect()
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    assert not [w for w in caught if issubclass(w.category, RuntimeWarning)]
+    assert unit.holding[28311] == 210
+    assert unit.holding[28301] == 0
+
+
+async def test_compound_write_partial_error_refreshes_state(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test a failure after partial writes refreshes coordinator state and re-raises."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+    unit.fail_write(28301, ModbusError("power write failed"))
+
+    with pytest.raises(HomeAssistantError) as err_info:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_ENTITY_ID: IKARO_ENTITY_ID,
+                ATTR_HVAC_MODE: HVACMode.HEAT,
+                ATTR_TEMPERATURE: 26.0,
+            },
+            blocking=True,
+        )
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    coordinator = init_ikaro_integration.runtime_data
+    assert coordinator.device.settings.target_temp_heat == 26.0
+
+
+async def test_device_command_lock_serializes_across_platforms(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test per-device command_lock prevents cross-platform write interleaving."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID},
+        blocking=True,
+    )
+
+    coordinator = init_integration.runtime_data
+    first_write_started = asyncio.Event()
+    release_first_write = asyncio.Event()
+    original_set_mode = coordinator.device.async_set_mode
+
+    async def _slow_set_mode(mode: object) -> None:
+        first_write_started.set()
+        await release_first_write.wait()
+        await original_set_mode(mode)  # type: ignore[arg-type]
+
+    writes: list[int] = []
+    unsub = unit.on_write(lambda event: writes.append(event.address))
+    try:
+        with patch.object(coordinator.device, "async_set_mode", _slow_set_mode):
+            climate_task = asyncio.create_task(
+                hass.services.async_call(
+                    CLIMATE_DOMAIN,
+                    SERVICE_SET_TEMPERATURE,
+                    {
+                        ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                        ATTR_HVAC_MODE: HVACMode.COOL,
+                        ATTR_TEMPERATURE: 24.5,
+                    },
+                    blocking=True,
+                )
+            )
+            await first_write_started.wait()
+            switch_task = asyncio.create_task(
+                hass.services.async_call(
+                    SWITCH_DOMAIN,
+                    SERVICE_TURN_ON,
+                    {
+                        ATTR_ENTITY_ID: (
+                            "switch.radiantore_skudo_dc_inverter_21_sleep_mode"
+                        )
+                    },
+                    blocking=True,
+                )
+            )
+            await asyncio.sleep(0)
+            release_first_write.set()
+            await asyncio.gather(climate_task, switch_task)
+    finally:
+        unsub()
+
+    assert writes == [28302, 28310, 28301, 28305]
 
 
 async def test_none_settings_handling(

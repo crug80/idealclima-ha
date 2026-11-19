@@ -132,9 +132,13 @@ class IdealclimaSwitchEntity(IdealclimaEntity, SwitchEntity):
     @override
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
-        await self._async_execute(self.entity_description.write_fn(self._skudo, True))
+        await self._async_execute(
+            lambda: self.entity_description.write_fn(self._skudo, True)
+        )
 
     @override
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
-        await self._async_execute(self.entity_description.write_fn(self._skudo, False))
+        await self._async_execute(
+            lambda: self.entity_description.write_fn(self._skudo, False)
+        )

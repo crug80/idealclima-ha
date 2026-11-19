@@ -1,5 +1,6 @@
 """Data update coordinator for the Ideal Clima integration."""
 
+import asyncio
 from datetime import timedelta
 import logging
 from typing import override
@@ -48,6 +49,7 @@ class IdealclimaDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
             update_interval=timedelta(seconds=SCAN_INTERVAL),
         )
         self.device = device
+        self.command_lock = asyncio.Lock()
         model = IdealclimaModel(entry.data[CONF_MODEL])
         self.device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
