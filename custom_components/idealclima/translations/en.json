@@ -166,6 +166,9 @@
         "modbus_error": {
             "message": "Modbus error while communicating with the Ideal Clima fan coil."
         },
+        "unknown_running_mode": {
+            "message": "Cannot set target temperature in auto mode because the active operating regime (cooling/heating) is unknown."
+        },
         "write_failed": {
             "message": "Failed to write settings to the Ideal Clima fan coil."
         }

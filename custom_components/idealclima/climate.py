@@ -25,8 +25,10 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, PRECISION_HALVES, UnitOfTemperature
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import DOMAIN
 from .coordinator import IdealclimaConfigEntry, IdealclimaDataUpdateCoordinator
 from .entity import IdealclimaEntity
 
@@ -34,6 +36,8 @@ PARALLEL_UPDATES = 1
 
 DEFAULT_MIN_TEMP = 18.0
 DEFAULT_MAX_TEMP = 30.0
+MIN_LIMIT_TEMP = 15.0
+MAX_LIMIT_TEMP = 35.0
 DEFAULT_FALLBACK_HEAT_TEMP = 21.0
 DEFAULT_FALLBACK_COOL_TEMP = 24.0
 FALLBACK_TEMP_MARGIN = 2.0
@@ -156,27 +160,37 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
         """Return the current ambient temperature."""
         return self.device.readings.ambient_temperature
 
+    def _skudo_temp_bounds(self) -> tuple[float, float]:
+        """Return validated (min, max) target temperature bounds for SKUDO."""
+        if not isinstance(self.device, SkudoDCInverter):
+            return (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)
+        low = self.device.settings.min_target_temp
+        high = self.device.settings.max_target_temp
+        min_temp = (
+            low
+            if low is not None and MIN_LIMIT_TEMP <= low <= MAX_LIMIT_TEMP
+            else DEFAULT_MIN_TEMP
+        )
+        max_temp = (
+            high
+            if high is not None and MIN_LIMIT_TEMP <= high <= MAX_LIMIT_TEMP
+            else DEFAULT_MAX_TEMP
+        )
+        if min_temp >= max_temp:
+            return (DEFAULT_MIN_TEMP, DEFAULT_MAX_TEMP)
+        return (min_temp, max_temp)
+
     @property
     @override
     def min_temp(self) -> float:
         """Return the minimum target temperature."""
-        if (
-            isinstance(self.device, SkudoDCInverter)
-            and self.device.settings.min_target_temp is not None
-        ):
-            return self.device.settings.min_target_temp
-        return DEFAULT_MIN_TEMP
+        return self._skudo_temp_bounds()[0]
 
     @property
     @override
     def max_temp(self) -> float:
         """Return the maximum target temperature."""
-        if (
-            isinstance(self.device, SkudoDCInverter)
-            and self.device.settings.max_target_temp is not None
-        ):
-            return self.device.settings.max_target_temp
-        return DEFAULT_MAX_TEMP
+        return self._skudo_temp_bounds()[1]
 
     @property
     @override
@@ -217,7 +231,9 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
         if mode is HVACMode.AUTO and isinstance(self.device, SkudoDCInverter):
             if self.device.readings.running_mode is SkudoRunningMode.HEAT:
                 return self.device.settings.target_temp_auto_heat
-            return self.device.settings.target_temp_auto_cool
+            if self.device.readings.running_mode is SkudoRunningMode.COOL:
+                return self.device.settings.target_temp_auto_cool
+            return None
         return None
 
     def _ikaro_fallback_temp_call(
@@ -289,13 +305,29 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             self.device.async_set_fan_speed(HA_TO_FAN_SPEED[fan_mode])
         )
 
+    @staticmethod
+    def _skudo_auto_temp_call(
+        device: SkudoDCInverter, temperature: float
+    ) -> Awaitable[None]:
+        """Return the AUTO setpoint write call matching SKUDO's running mode."""
+        running_mode = device.readings.running_mode
+        if running_mode is SkudoRunningMode.HEAT:
+            return device.async_set_target_temp_auto_heat(temperature)
+        if running_mode is SkudoRunningMode.COOL:
+            return device.async_set_target_temp_auto_cool(temperature)
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="unknown_running_mode",
+        )
+
     @override
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set a new target temperature for the active mode."""
         calls: list[Awaitable[None]] = []
         mode = self.hvac_mode
         turn_on = False
-        if (new_mode := kwargs.get(ATTR_HVAC_MODE)) is not None:
+        new_mode = kwargs.get(ATTR_HVAC_MODE)
+        if new_mode is not None:
             mode = HVACMode(new_mode)
             if mode is HVACMode.OFF:
                 calls.append(self.device.async_set_power(False))
@@ -306,20 +338,26 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
                     calls.append(self.device.async_set_mode(HA_TO_SKUDO_MODE[mode]))
                 turn_on = not self.device.settings.power
 
-        if (temperature := kwargs.get(ATTR_TEMPERATURE)) is not None:
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if (
+            mode is HVACMode.AUTO
+            and isinstance(self.device, SkudoDCInverter)
+            and temperature is not None
+        ):
+            if new_mode is not None:
+                if turn_on:
+                    calls.append(self.device.async_set_power(True))
+                await self._async_execute(*calls)
+                calls = []
+            calls.append(self._skudo_auto_temp_call(self.device, temperature))
+            await self._async_execute(*calls)
+            return
+
+        if temperature is not None:
             if mode in (HVACMode.COOL, HVACMode.DRY):
                 calls.append(self.device.async_set_target_temp_cool(temperature))
             elif mode is HVACMode.HEAT:
                 calls.append(self.device.async_set_target_temp_heat(temperature))
-            elif mode is HVACMode.AUTO and isinstance(self.device, SkudoDCInverter):
-                if self.device.readings.running_mode is SkudoRunningMode.HEAT:
-                    calls.append(
-                        self.device.async_set_target_temp_auto_heat(temperature)
-                    )
-                else:
-                    calls.append(
-                        self.device.async_set_target_temp_auto_cool(temperature)
-                    )
 
         if turn_on:
             calls.append(self.device.async_set_power(True))
