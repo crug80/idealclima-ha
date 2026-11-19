@@ -14,12 +14,34 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import EntityCategory, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import DOMAIN
 from .coordinator import IdealclimaConfigEntry, IdealclimaDataUpdateCoordinator
 from .entity import IdealclimaEntity
 
 PARALLEL_UPDATES = 1
+
+
+def _validate_max_target_temp(device: SkudoDCInverter, value: float) -> None:
+    """Ensure maximum target temperature stays strictly above the minimum."""
+    min_temp = device.settings.min_target_temp
+    if min_temp is not None and value <= min_temp:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="max_target_temp_too_low",
+        )
+
+
+def _validate_min_target_temp(device: SkudoDCInverter, value: float) -> None:
+    """Ensure minimum target temperature stays strictly below the maximum."""
+    max_temp = device.settings.max_target_temp
+    if max_temp is not None and value >= max_temp:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="min_target_temp_too_high",
+        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -28,6 +50,7 @@ class IdealclimaNumberEntityDescription(NumberEntityDescription):
 
     value_fn: Callable[[SkudoDCInverter], float | int | None]
     write_fn: Callable[[SkudoDCInverter, float], Awaitable[None]]
+    validate_fn: Callable[[SkudoDCInverter, float], None] | None = None
 
 
 SKUDO_NUMBER_DESCRIPTIONS: tuple[IdealclimaNumberEntityDescription, ...] = (
@@ -65,6 +88,7 @@ SKUDO_NUMBER_DESCRIPTIONS: tuple[IdealclimaNumberEntityDescription, ...] = (
         mode=NumberMode.BOX,
         value_fn=lambda device: device.settings.max_target_temp,
         write_fn=lambda device, value: device.async_set_max_target_temp(value),
+        validate_fn=_validate_max_target_temp,
     ),
     IdealclimaNumberEntityDescription(
         key="min_target_temp",
@@ -78,6 +102,7 @@ SKUDO_NUMBER_DESCRIPTIONS: tuple[IdealclimaNumberEntityDescription, ...] = (
         mode=NumberMode.BOX,
         value_fn=lambda device: device.settings.min_target_temp,
         write_fn=lambda device, value: device.async_set_min_target_temp(value),
+        validate_fn=_validate_min_target_temp,
     ),
     IdealclimaNumberEntityDescription(
         key="anti_draft_threshold",
@@ -135,6 +160,8 @@ class IdealclimaNumberEntity(IdealclimaEntity, NumberEntity):
     @override
     async def async_set_native_value(self, value: float) -> None:
         """Update the current number value."""
+        if self.entity_description.validate_fn is not None:
+            self.entity_description.validate_fn(self._skudo, value)
         await self._async_execute(
             lambda: self.entity_description.write_fn(self._skudo, value)
         )

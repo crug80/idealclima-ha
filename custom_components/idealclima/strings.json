@@ -164,6 +164,12 @@
     "device_unreachable": {
       "message": "Unable to reach the Ideal Clima fan coil over Modbus."
     },
+    "max_target_temp_too_low": {
+      "message": "Maximum target temperature must be greater than the minimum target temperature."
+    },
+    "min_target_temp_too_high": {
+      "message": "Minimum target temperature must be lower than the maximum target temperature."
+    },
     "modbus_error": {
       "message": "Modbus error while communicating with the Ideal Clima fan coil."
     },

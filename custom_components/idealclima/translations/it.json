@@ -164,6 +164,12 @@
     "device_unreachable": {
       "message": "Impossibile raggiungere il ventilconvettore Ideal Clima via Modbus."
     },
+    "max_target_temp_too_low": {
+      "message": "La temperatura target massima deve essere superiore alla temperatura target minima."
+    },
+    "min_target_temp_too_high": {
+      "message": "La temperatura target minima deve essere inferiore alla temperatura target massima."
+    },
     "modbus_error": {
       "message": "Errore Modbus durante la comunicazione con il ventilconvettore Ideal Clima."
     },
