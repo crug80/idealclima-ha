@@ -394,6 +394,152 @@ async def test_ikaro_set_temperature_with_hvac_mode_and_off(
     assert unit.holding[28301] == 0
 
 
+async def test_ikaro_set_temperature_writes_setpoint_before_power_on(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test turning IKARO on via set_temperature writes setpoint before power on."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+
+    writes: list[tuple[int, list[int] | list[bool]]] = []
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_ENTITY_ID: IKARO_ENTITY_ID,
+                ATTR_HVAC_MODE: HVACMode.HEAT,
+                ATTR_TEMPERATURE: 26.0,
+            },
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    assert writes == [
+        (28302, [4]),
+        (28311, [260]),
+        (28301, [1]),
+        (28303, [3]),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("hvac_mode", "ambient_raw", "target_reg", "expected_fallback_raw"),
+    [
+        pytest.param(HVACMode.HEAT, 235, 28311, 255, id="heat_valid_ambient"),
+        pytest.param(HVACMode.HEAT, 0, 28311, 210, id="heat_invalid_ambient"),
+        pytest.param(HVACMode.COOL, 235, 28310, 215, id="cool_valid_ambient"),
+        pytest.param(HVACMode.COOL, 999, 28310, 240, id="cool_invalid_ambient"),
+    ],
+)
+async def test_ikaro_fallback_setpoint_when_uninitialized(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+    hvac_mode: HVACMode,
+    ambient_raw: int,
+    target_reg: int,
+    expected_fallback_raw: int,
+) -> None:
+    """Test IKARO writes a safe fallback setpoint before power on if register is 0."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    unit.input[46801] = ambient_raw
+    unit.holding[target_reg] = 0
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+
+    writes: list[tuple[int, list[int] | list[bool]]] = []
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_HVAC_MODE,
+            {ATTR_ENTITY_ID: IKARO_ENTITY_ID, ATTR_HVAC_MODE: hvac_mode},
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    expected_mode = 4 if hvac_mode is HVACMode.HEAT else 1
+    assert writes == [
+        (28302, [expected_mode]),
+        (target_reg, [expected_fallback_raw]),
+        (28301, [1]),
+        (28303, [3]),
+    ]
+
+
+async def test_ikaro_turn_on_and_fan_only_fallback_handling(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test turn_on applies fallback when setpoint is 0 and skips it for FAN_ONLY."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    unit.holding[28311] = 0
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+
+    writes: list[tuple[int, list[int] | list[bool]]] = []
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    assert writes == [
+        (28311, [255]),
+        (28301, [1]),
+        (28303, [3]),
+    ]
+
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+        blocking=True,
+    )
+    writes.clear()
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_HVAC_MODE,
+            {ATTR_ENTITY_ID: IKARO_ENTITY_ID, ATTR_HVAC_MODE: HVACMode.FAN_ONLY},
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    assert writes == [
+        (28302, [3]),
+        (28301, [1]),
+        (28303, [3]),
+    ]
+
+
 async def test_write_error_raises_home_assistant_error(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,

@@ -69,6 +69,7 @@ To change the **Model**, **Modbus unit ID**, **Host/Port**, **Serial port/Baud r
 - **Factory address `15`**: units still set to `unit_id = 15` cannot be polled or controlled and are blocked by the config flow.
 - **Comfosplit IKARO HW**:
   - Turning the unit off sets fan speed register `28303` to `0` (`OFF`); turning it back on restores the last active fan speed automatically.
+  - Before powering on, the integration writes the requested target temperature first (or a safe fallback setpoint if the target register is uninitialized/out of `18.0–30.0 °C`). If a valid setpoint is already satisfied by the ambient temperature, the unit remains off per Ideal Clima's hardware logic.
   - `AUTO` mode and SKUDO configuration/diagnostic registers are not supported by IKARO HW hardware and are omitted.
 
 ## Diagnostics & Troubleshooting
