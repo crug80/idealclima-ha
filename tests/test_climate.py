@@ -34,7 +34,7 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_TEMPERATURE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from . import MOCK_UNIT_ID
 
@@ -159,6 +159,101 @@ async def test_skudo_auto_mode_cool_running_regime(
     state = hass.states.get(SKUDO_ENTITY_ID)
     assert state is not None
     assert state.attributes[ATTR_TEMPERATURE] == 24.5
+
+
+async def test_skudo_auto_unknown_running_mode(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test SKUDO in AUTO with unknown 46807 reports None and rejects writes."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    unit.input[46807] = 0xFFFF
+
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_HVAC_MODE,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_HVAC_MODE: HVACMode.AUTO},
+        blocking=True,
+    )
+
+    state = hass.states.get(SKUDO_ENTITY_ID)
+    assert state is not None
+    assert state.state == HVACMode.AUTO
+    assert state.attributes.get(ATTR_TEMPERATURE) is None
+
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_TEMPERATURE: 23.0},
+            blocking=True,
+        )
+
+    assert unit.holding[28312] == 260
+    assert unit.holding[28313] == 200
+
+
+async def test_skudo_contextual_switch_to_auto_uses_refreshed_running_mode(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test set_temperature switching to AUTO polls 46807 before writing setpoint."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID},
+        blocking=True,
+    )
+    # Initial cached running_mode is HEAT (1); switching to AUTO flips 46807 to COOL (0)
+    unsub = unit.on_write(
+        lambda event: (
+            unit.input.__setitem__(46807, 0)
+            if event.address == 28302 and event.values == [0]
+            else None
+        )
+    )
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                ATTR_HVAC_MODE: HVACMode.AUTO,
+                ATTR_TEMPERATURE: 24.5,
+            },
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    assert unit.holding[28301] == 1
+    assert unit.holding[28302] == 0
+    assert unit.holding[28312] == 245
+    assert unit.holding[28313] == 200
+
+
+async def test_skudo_invalid_temp_bounds_fallback_to_defaults(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Test invalid or inverted SKUDO min/max temp registers fall back to defaults."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    unit.holding[28309] = 280
+    unit.holding[28308] = 200
+
+    freezer.tick(timedelta(seconds=SCAN_INTERVAL))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    state = hass.states.get(SKUDO_ENTITY_ID)
+    assert state is not None
+    assert state.attributes[ATTR_MIN_TEMP] == 18.0
+    assert state.attributes[ATTR_MAX_TEMP] == 30.0
 
 
 async def test_skudo_set_hvac_mode_off_and_back_on(

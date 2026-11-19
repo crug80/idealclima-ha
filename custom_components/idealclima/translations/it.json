@@ -166,6 +166,9 @@
     "modbus_error": {
       "message": "Errore Modbus durante la comunicazione con il ventilconvettore Ideal Clima."
     },
+    "unknown_running_mode": {
+      "message": "Impossibile impostare la temperatura target in modalità automatica perché il regime operativo attivo (raffreddamento/riscaldamento) è sconosciuto."
+    },
     "write_failed": {
       "message": "Impossibile scrivere le impostazioni sul ventilconvettore Ideal Clima."
     }
