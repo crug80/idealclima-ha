@@ -135,4 +135,6 @@ class IdealclimaNumberEntity(IdealclimaEntity, NumberEntity):
     @override
     async def async_set_native_value(self, value: float) -> None:
         """Update the current number value."""
-        await self._async_execute(self.entity_description.write_fn(self._skudo, value))
+        await self._async_execute(
+            lambda: self.entity_description.write_fn(self._skudo, value)
+        )

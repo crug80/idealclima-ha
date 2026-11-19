@@ -82,4 +82,6 @@ class IdealclimaSelectEntity(IdealclimaEntity, SelectEntity):
     @override
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
-        await self._async_execute(self.entity_description.write_fn(self._skudo, option))
+        await self._async_execute(
+            lambda: self.entity_description.write_fn(self._skudo, option)
+        )
