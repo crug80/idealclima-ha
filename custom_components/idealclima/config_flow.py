@@ -4,7 +4,7 @@ from collections.abc import Mapping
 import logging
 from typing import Any, override
 
-from modbus_connection import ModbusError
+from modbus_connection import ModbusError, ModbusTcpParams
 import probatio
 
 from homeassistant.components.modbus import async_get_temporary_unit
@@ -142,12 +142,16 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     def _has_matching_entry(
-        self, match_data: Mapping[str, Any], exclude_entry_id: str
+        self,
+        endpoint: tuple[str, str, int] | tuple[str, str],
+        unit_id: int,
+        exclude_entry_id: str | None = None,
     ) -> bool:
-        """Return whether another config entry matches the link endpoint."""
+        """Return whether another config entry targets the same Modbus unit."""
         return any(
             entry.entry_id != exclude_entry_id
-            and all(entry.data.get(key) == val for key, val in match_data.items())
+            and entry.data[CONF_UNIT_ID] == unit_id
+            and create_modbus_params(entry.data).endpoint == endpoint
             for entry in self._async_current_entries()
         )
 
@@ -161,33 +165,23 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
         reconfigure_entry = (
             self._get_reconfigure_entry() if self.source == SOURCE_RECONFIGURE else None
         )
+        exclude_entry_id = (
+            reconfigure_entry.entry_id if reconfigure_entry is not None else None
+        )
         errors: dict[str, str] = {}
         if user_input is not None:
             unit_id = user_input[CONF_UNIT_ID]
             if unit_id == FACTORY_DEFAULT_UNIT_ID:
                 errors[CONF_UNIT_ID] = "factory_default_unit_id"
             else:
-                if connection_type == TYPE_TCP:
-                    match_data: dict[str, Any] = {
-                        CONF_TYPE: TYPE_TCP,
-                        CONF_HOST: user_input[CONF_HOST],
-                        CONF_PORT: user_input[CONF_PORT],
-                        CONF_UNIT_ID: unit_id,
-                    }
-                else:
-                    match_data = {
-                        CONF_TYPE: TYPE_SERIAL,
-                        CONF_DEVICE: user_input[CONF_DEVICE],
-                        CONF_UNIT_ID: unit_id,
-                    }
-
-                if reconfigure_entry is not None:
-                    if self._has_matching_entry(match_data, reconfigure_entry.entry_id):
-                        return self.async_abort(reason="already_configured")
-                else:
-                    self._async_abort_entries_match(match_data)
-
                 data = {CONF_TYPE: connection_type, **user_input}
+                params = create_modbus_params(data)
+                if isinstance(params, ModbusTcpParams):
+                    data[CONF_HOST] = params.host
+
+                if self._has_matching_entry(params.endpoint, unit_id, exclude_entry_id):
+                    return self.async_abort(reason="already_configured")
+
                 try:
                     await _async_probe(self.hass, data)
                 except ModbusError, HomeAssistantError:
@@ -196,6 +190,11 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception")
                     errors["base"] = "unknown"
                 else:
+                    if self._has_matching_entry(
+                        params.endpoint, unit_id, exclude_entry_id
+                    ):
+                        return self.async_abort(reason="already_configured")
+
                     model_name = MODEL_NAMES[IdealclimaModel(data[CONF_MODEL])]
                     title = f"{model_name} ({unit_id})"
                     if reconfigure_entry is not None:
