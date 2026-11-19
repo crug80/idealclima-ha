@@ -184,8 +184,14 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 try:
                     await _async_probe(self.hass, data)
-                except ModbusError, HomeAssistantError:
+                except ModbusError:
                     errors["base"] = "cannot_connect"
+                except HomeAssistantError as err:
+                    errors["base"] = (
+                        "device_in_use"
+                        if err.translation_key == "device_in_use"
+                        else "cannot_connect"
+                    )
                 except Exception:
                     _LOGGER.exception("Unexpected exception")
                     errors["base"] = "unknown"

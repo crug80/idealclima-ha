@@ -233,6 +233,13 @@ async def test_user_step_cannot_connect(
     ("error", "expected_error"),
     [
         pytest.param(HomeAssistantError("in use"), "cannot_connect", id="link_clash"),
+        pytest.param(
+            HomeAssistantError(
+                translation_domain="modbus", translation_key="device_in_use"
+            ),
+            "device_in_use",
+            id="device_in_use",
+        ),
         pytest.param(RuntimeError("boom"), "unknown", id="unexpected"),
     ],
 )
