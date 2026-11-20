@@ -1,5 +1,8 @@
 """Tests for the Ideal Clima number platform."""
 
+import asyncio
+from unittest.mock import patch
+
 from modbus_connection import ModbusError
 from modbus_connection.mock import MockModbusConnection
 import pytest
@@ -126,11 +129,25 @@ async def test_number_none_and_write_error(
             id="min_at_or_above_max",
         ),
         pytest.param(
+            "number.radiantore_skudo_dc_inverter_21_minimum_target_temperature",
+            28309,
+            29.99,
+            180,
+            id="min_rounds_to_max",
+        ),
+        pytest.param(
             "number.radiantore_skudo_dc_inverter_21_maximum_target_temperature",
             28308,
             18.0,
             300,
             id="max_at_or_below_min",
+        ),
+        pytest.param(
+            "number.radiantore_skudo_dc_inverter_21_maximum_target_temperature",
+            28308,
+            18.2,
+            300,
+            id="max_rounds_to_min",
         ),
     ],
 )
@@ -155,6 +172,96 @@ async def test_skudo_temperature_limits_reject_crossing(
         )
 
     assert unit.holding[register] == unchanged_raw
+
+
+@pytest.mark.usefixtures("init_integration")
+async def test_skudo_number_normalizes_value_to_native_step(
+    hass: HomeAssistant,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test set_value rounds to native_step before writing to Modbus."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {
+            ATTR_ENTITY_ID: (
+                "number.radiantore_skudo_dc_inverter_21_minimum_target_temperature"
+            ),
+            ATTR_VALUE: 29.3,
+        },
+        blocking=True,
+    )
+    assert unit.holding[28309] == 295
+
+    await hass.services.async_call(
+        NUMBER_DOMAIN,
+        SERVICE_SET_VALUE,
+        {
+            ATTR_ENTITY_ID: "number.radiantore_skudo_dc_inverter_21_auto_off_timer",
+            ATTR_VALUE: 3.6,
+        },
+        blocking=True,
+    )
+    assert unit.holding[28306] == 4
+
+
+async def test_skudo_temperature_limits_validate_under_command_lock(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test concurrent limit writes validate against the updated opposite limit."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    coordinator = init_integration.runtime_data
+    first_write_started = asyncio.Event()
+    release_first_write = asyncio.Event()
+    original_set_min = coordinator.device.async_set_min_target_temp
+
+    async def _slow_set_min(temperature: float) -> None:
+        first_write_started.set()
+        await release_first_write.wait()
+        await original_set_min(temperature)
+
+    with patch.object(coordinator.device, "async_set_min_target_temp", _slow_set_min):
+        min_task = asyncio.create_task(
+            hass.services.async_call(
+                NUMBER_DOMAIN,
+                SERVICE_SET_VALUE,
+                {
+                    ATTR_ENTITY_ID: (
+                        "number.radiantore_skudo_dc_inverter_21_"
+                        "minimum_target_temperature"
+                    ),
+                    ATTR_VALUE: 25.0,
+                },
+                blocking=True,
+            )
+        )
+        await first_write_started.wait()
+        max_task = asyncio.create_task(
+            hass.services.async_call(
+                NUMBER_DOMAIN,
+                SERVICE_SET_VALUE,
+                {
+                    ATTR_ENTITY_ID: (
+                        "number.radiantore_skudo_dc_inverter_21_"
+                        "maximum_target_temperature"
+                    ),
+                    ATTR_VALUE: 24.0,
+                },
+                blocking=True,
+            )
+        )
+        await asyncio.sleep(0)
+        release_first_write.set()
+        await min_task
+        with pytest.raises(ServiceValidationError):
+            await max_task
+
+    assert unit.holding[28309] == 250
+    assert unit.holding[28308] == 300
 
 
 @pytest.mark.usefixtures("init_ikaro_integration")

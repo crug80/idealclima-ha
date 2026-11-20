@@ -44,10 +44,16 @@ def _validate_min_target_temp(device: SkudoDCInverter, value: float) -> None:
         )
 
 
+def _normalize_to_step(value: float, step: float) -> float:
+    """Round value to the entity's native step resolution."""
+    return round(value / step) * step
+
+
 @dataclass(frozen=True, kw_only=True)
 class IdealclimaNumberEntityDescription(NumberEntityDescription):
     """Describe an Ideal Clima number entity."""
 
+    native_step: float
     value_fn: Callable[[SkudoDCInverter], float | int | None]
     write_fn: Callable[[SkudoDCInverter, float], Awaitable[None]]
     validate_fn: Callable[[SkudoDCInverter, float], None] | None = None
@@ -160,8 +166,10 @@ class IdealclimaNumberEntity(IdealclimaEntity, NumberEntity):
     @override
     async def async_set_native_value(self, value: float) -> None:
         """Update the current number value."""
-        if self.entity_description.validate_fn is not None:
-            self.entity_description.validate_fn(self._skudo, value)
-        await self._async_execute(
-            lambda: self.entity_description.write_fn(self._skudo, value)
-        )
+        normalized = _normalize_to_step(value, self.entity_description.native_step)
+        async with self.coordinator.command_lock:
+            if self.entity_description.validate_fn is not None:
+                self.entity_description.validate_fn(self._skudo, normalized)
+            await self._async_execute_locked(
+                lambda: self.entity_description.write_fn(self._skudo, normalized)
+            )
