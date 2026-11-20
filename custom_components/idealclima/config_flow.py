@@ -54,13 +54,21 @@ MODEL_SELECTOR = SelectSelector(
     )
 )
 
+
+def _strict_int(value: float) -> int:
+    """Convert a whole-number float from NumberSelector to int, rejecting fractions."""
+    if not value.is_integer():
+        raise probatio.Invalid("Expected an integer value")
+    return int(value)
+
+
 UNIT_ID_SELECTOR = probatio.All(
     NumberSelector(
         NumberSelectorConfig(
             mode=NumberSelectorMode.BOX, min=MIN_UNIT_ID, max=MAX_UNIT_ID
         )
     ),
-    probatio.Coerce(int),
+    _strict_int,
 )
 
 STEP_TCP_DATA_SCHEMA = probatio.Schema(
@@ -73,7 +81,7 @@ STEP_TCP_DATA_SCHEMA = probatio.Schema(
             NumberSelector(
                 NumberSelectorConfig(mode=NumberSelectorMode.BOX, min=1, max=65535)
             ),
-            probatio.Coerce(int),
+            _strict_int,
         ),
         probatio.Required(CONF_UNIT_ID, default=DEFAULT_UNIT_ID): UNIT_ID_SELECTOR,
     }
@@ -87,7 +95,7 @@ STEP_SERIAL_DATA_SCHEMA = probatio.Schema(
         probatio.Required(CONF_DEVICE): SerialPortSelector(),
         probatio.Required(CONF_BAUDRATE, default=DEFAULT_BAUDRATE): probatio.All(
             NumberSelector(NumberSelectorConfig(mode=NumberSelectorMode.BOX, min=1)),
-            probatio.Coerce(int),
+            _strict_int,
         ),
         probatio.Required(CONF_UNIT_ID, default=DEFAULT_UNIT_ID): UNIT_ID_SELECTOR,
     }
