@@ -593,6 +593,48 @@ async def test_ikaro_set_temperature_with_hvac_mode_and_off(
     assert unit.holding[28301] == 0
 
 
+async def test_set_temperature_rejects_unsupported_hvac_mode(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test set_temperature rejects hvac_mode not supported by the entity."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    writes: list[int] = []
+    unsub = unit.on_write(lambda event: writes.append(event.address))
+    try:
+        with pytest.raises(ServiceValidationError) as ikaro_err:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {
+                    ATTR_ENTITY_ID: IKARO_ENTITY_ID,
+                    ATTR_HVAC_MODE: HVACMode.AUTO,
+                    ATTR_TEMPERATURE: 22.0,
+                },
+                blocking=True,
+            )
+        assert ikaro_err.value.translation_key == "unsupported_hvac_mode"
+
+        with pytest.raises(ServiceValidationError) as skudo_err:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {
+                    ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                    ATTR_HVAC_MODE: HVACMode.HEAT_COOL,
+                    ATTR_TEMPERATURE: 22.0,
+                },
+                blocking=True,
+            )
+        assert skudo_err.value.translation_key == "unsupported_hvac_mode"
+    finally:
+        unsub()
+
+    assert writes == []
+
+
 async def test_ikaro_set_temperature_writes_setpoint_before_power_on(
     hass: HomeAssistant,
     init_ikaro_integration: MockConfigEntry,
