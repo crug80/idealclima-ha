@@ -7,8 +7,8 @@ from unittest.mock import patch
 import warnings
 
 from freezegun.api import FrozenDateTimeFactory
-from modbus_connection import ModbusError
-from modbus_connection.mock import MockModbusConnection
+from modbus_connection import ModbusError, ModbusTimeoutError
+from modbus_connection.mock import MockModbusConnection, WriteEvent
 import pytest
 from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
 
@@ -237,6 +237,105 @@ async def test_skudo_contextual_switch_to_auto_uses_refreshed_running_mode(
     assert unit.holding[28301] == 1
     assert unit.holding[28302] == 0
     assert unit.holding[28312] == 245
+    assert unit.holding[28313] == 200
+
+
+async def test_skudo_auto_set_temperature_reads_fresh_running_mode(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test temperature-only command in AUTO reads fresh 46807 before writing."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_HVAC_MODE,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_HVAC_MODE: HVACMode.AUTO},
+        blocking=True,
+    )
+    # Cached running_mode is HEAT (1); hardware switches to COOL (0) between polls
+    unit.input[46807] = 0
+
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_TEMPERATURE,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_TEMPERATURE: 24.5},
+        blocking=True,
+    )
+
+    assert unit.holding[28312] == 245
+    assert unit.holding[28313] == 200
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(ModbusTimeoutError("timeout"), id="timeout_exception"),
+        pytest.param(ModbusError("read error"), id="incomplete_report"),
+    ],
+)
+async def test_skudo_auto_set_temperature_aborts_when_running_mode_read_fails(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+    error: ModbusError,
+) -> None:
+    """Test AUTO setpoint write aborts if fresh 46807 read fails."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_HVAC_MODE,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_HVAC_MODE: HVACMode.AUTO},
+        blocking=True,
+    )
+    unit.input[46807] = 0
+    unit.fail_read(46807, error, register_type="input")
+
+    with pytest.raises(HomeAssistantError) as err_info:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_TEMPERATURE: 24.5},
+            blocking=True,
+        )
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    assert unit.holding[28312] == 260
+    assert unit.holding[28313] == 200
+
+
+async def test_skudo_contextual_switch_to_auto_aborts_when_readings_refresh_fails(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test switching to AUTO with temperature aborts setpoint if 46807 read fails."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+
+    def _on_write(event: WriteEvent) -> None:
+        if event.address == 28302 and event.values == [0]:
+            unit.input[46807] = 0
+            unit.fail_read(46807, ModbusTimeoutError("timeout"), register_type="input")
+
+    unsub = unit.on_write(_on_write)
+    try:
+        with pytest.raises(HomeAssistantError) as err_info:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {
+                    ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                    ATTR_HVAC_MODE: HVACMode.AUTO,
+                    ATTR_TEMPERATURE: 24.5,
+                },
+                blocking=True,
+            )
+    finally:
+        unsub()
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    assert unit.holding[28302] == 0
+    assert unit.holding[28312] == 260
     assert unit.holding[28313] == 200
 
 
