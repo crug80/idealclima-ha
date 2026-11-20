@@ -12,6 +12,7 @@ from idealclima_modbus import (
     SkudoMode,
     SkudoRunningMode,
 )
+from modbus_connection import ModbusError
 
 from homeassistant.components.climate import (
     ATTR_HVAC_MODE,
@@ -26,7 +27,7 @@ from homeassistant.components.climate import (
 )
 from homeassistant.const import ATTR_TEMPERATURE, PRECISION_HALVES, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN
@@ -312,6 +313,23 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             partial(self.device.async_set_fan_speed, HA_TO_FAN_SPEED[fan_mode])
         )
 
+    async def _async_read_skudo_readings(self, device: SkudoDCInverter) -> None:
+        """Read fresh input registers before selecting the AUTO setpoint register."""
+        try:
+            report = await device.async_update_readings()
+        except ModbusError as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="write_failed",
+            ) from err
+        if not report.complete:
+            first_error = next(iter(report.failed.values()))
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="write_failed",
+            ) from first_error
+        self.coordinator.async_update_listeners()
+
     @staticmethod
     def _skudo_auto_temp_call(
         device: SkudoDCInverter, temperature: float
@@ -360,9 +378,10 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
                     if turn_on:
                         calls.append(partial(self.device.async_set_power, True))
                     await self._async_execute_locked(*calls)
-                    calls = []
-                calls.append(self._skudo_auto_temp_call(self.device, temperature))
-                await self._async_execute_locked(*calls)
+                await self._async_read_skudo_readings(self.device)
+                await self._async_execute_locked(
+                    self._skudo_auto_temp_call(self.device, temperature)
+                )
             return
 
         if temperature is not None:
