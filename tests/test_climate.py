@@ -726,6 +726,48 @@ async def test_compound_write_partial_error_refreshes_state(
     assert coordinator.device.settings.target_temp_heat == 26.0
 
 
+async def test_ikaro_single_call_partial_power_error_refreshes_state(
+    hass: HomeAssistant,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test a partial write inside async_set_power refreshes state on error."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    unit.fail_write(28303, ModbusError("fan write failed"))
+
+    with pytest.raises(HomeAssistantError) as err_info:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_TURN_OFF,
+            {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+            blocking=True,
+        )
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    assert unit.holding[28301] == 0
+    assert (state := hass.states.get(IKARO_ENTITY_ID)) is not None
+    assert state.state == HVACMode.OFF
+
+    # Simulate unit off with fan OFF; turn_on writes 28301=1 then fails on 28303
+    unit.holding[28303] = 0
+    coordinator = init_ikaro_integration.runtime_data
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    with pytest.raises(HomeAssistantError) as err_info:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_TURN_ON,
+            {ATTR_ENTITY_ID: IKARO_ENTITY_ID},
+            blocking=True,
+        )
+
+    assert isinstance(err_info.value.__cause__, ModbusError)
+    assert unit.holding[28301] == 1
+    assert (state := hass.states.get(IKARO_ENTITY_ID)) is not None
+    assert state.state == HVACMode.HEAT
+
+
 async def test_device_command_lock_serializes_across_platforms(
     hass: HomeAssistant,
     init_integration: MockConfigEntry,
