@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, _patch, patch
 
@@ -13,8 +14,10 @@ from modbus_connection import (
     ModbusTimeoutError,
 )
 from modbus_connection.mock import MockModbusConnection, MockModbusUnit
+import probatio
 import pytest
 from pytest_homeassistant.common import MockConfigEntry
+from pytest_homeassistant.typing import ClientSessionGenerator
 
 from custom_components.idealclima.const import (
     CONF_BAUDRATE,
@@ -30,6 +33,8 @@ from homeassistant.const import CONF_HOST, CONF_MODEL, CONF_PORT, CONF_TYPE
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.setup import async_setup_component
 
 from . import (
     MOCK_DEVICE,
@@ -95,6 +100,10 @@ async def _start_flow(hass: HomeAssistant, connection_type: str) -> str:
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == connection_type
     assert result["errors"] == {}
+    assert result["data_schema"] is not None
+    assert probatio.to_field_list(
+        result["data_schema"], custom_serializer=cv.custom_serializer
+    )
 
     return result["flow_id"]
 
@@ -385,6 +394,10 @@ async def _start_reconfigure_flow(
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == connection_type
     assert result["errors"] == {}
+    assert result["data_schema"] is not None
+    assert probatio.to_field_list(
+        result["data_schema"], custom_serializer=cv.custom_serializer
+    )
 
     return result["flow_id"]
 
@@ -514,3 +527,35 @@ async def test_flow_rejects_fractional_integer_fields(
 
     assert field in err_info.value.schema_errors
     mock_temporary_unit.assert_not_called()
+
+
+@pytest.mark.parametrize("connection_type", [TYPE_TCP, TYPE_SERIAL])
+async def test_config_flow_http_api_serializes_form(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    connection_type: str,
+) -> None:
+    """Test /api/config/config_entries/flow/{flow_id} renders TCP/serial forms."""
+    assert await async_setup_component(hass, "config", {})
+    client = await hass_client()
+
+    init_resp = await client.post(
+        "/api/config/config_entries/flow",
+        json={"handler": DOMAIN},
+    )
+    assert init_resp.status == HTTPStatus.OK
+    init_body = await init_resp.json()
+    assert init_body["type"] == "menu"
+    flow_id = init_body["flow_id"]
+
+    form_resp = await client.post(
+        f"/api/config/config_entries/flow/{flow_id}",
+        json={"next_step_id": connection_type},
+    )
+    assert form_resp.status == HTTPStatus.OK
+    form_body = await form_resp.json()
+    assert form_body["type"] == "form"
+    assert form_body["step_id"] == connection_type
+    fields = {field["name"]: field for field in form_body["data_schema"]}
+    assert fields[CONF_UNIT_ID]["type"] == "integer"
+    assert "number" in fields[CONF_UNIT_ID]["selector"]
