@@ -931,7 +931,7 @@ async def test_device_command_lock_serializes_across_platforms(
     async def _slow_set_mode(mode: object) -> None:
         first_write_started.set()
         await release_first_write.wait()
-        await original_set_mode(mode)  # type: ignore[arg-type]
+        await original_set_mode(mode)
 
     writes: list[int] = []
     unsub = unit.on_write(lambda event: writes.append(event.address))
