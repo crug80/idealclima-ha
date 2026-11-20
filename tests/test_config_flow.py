@@ -28,7 +28,7 @@ from custom_components.idealclima.const import (
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MODEL, CONF_PORT, CONF_TYPE
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.exceptions import HomeAssistantError
 
 from . import (
@@ -477,3 +477,40 @@ async def test_reconfigure_errors_and_duplicate_check(hass: HomeAssistant) -> No
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
+
+
+@pytest.mark.parametrize(
+    ("connection_type", "base_input", "field", "fractional_value"),
+    [
+        pytest.param(TYPE_TCP, MOCK_TCP_INPUT, CONF_UNIT_ID, 21.9, id="tcp_unit_id"),
+        pytest.param(TYPE_TCP, MOCK_TCP_INPUT, CONF_PORT, 502.5, id="tcp_port"),
+        pytest.param(
+            TYPE_SERIAL, MOCK_SERIAL_INPUT, CONF_BAUDRATE, 9600.5, id="serial_baudrate"
+        ),
+        pytest.param(
+            TYPE_SERIAL, MOCK_SERIAL_INPUT, CONF_UNIT_ID, 21.1, id="serial_unit_id"
+        ),
+    ],
+)
+async def test_flow_rejects_fractional_integer_fields(
+    hass: HomeAssistant,
+    connection_type: str,
+    base_input: dict[str, Any],
+    field: str,
+    fractional_value: float,
+) -> None:
+    """Test unit_id, port, and baudrate reject fractional numbers without probing."""
+    flow_id = await _start_flow(hass, connection_type)
+
+    with (
+        patch(
+            "custom_components.idealclima.config_flow.async_get_temporary_unit"
+        ) as mock_temporary_unit,
+        pytest.raises(InvalidData) as err_info,
+    ):
+        await hass.config_entries.flow.async_configure(
+            flow_id, {**base_input, field: fractional_value}
+        )
+
+    assert field in err_info.value.schema_errors
+    mock_temporary_unit.assert_not_called()
