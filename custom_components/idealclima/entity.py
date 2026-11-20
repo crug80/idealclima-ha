@@ -38,14 +38,11 @@ class IdealclimaEntity(CoordinatorEntity[IdealclimaDataUpdateCoordinator]):
         self, *calls: Callable[[], Awaitable[None]]
     ) -> None:
         """Run Modbus write callables sequentially while holding command_lock."""
-        completed = 0
         try:
             for call in calls:
                 await call()
-                completed += 1
         except ModbusError as err:
-            if completed > 0:
-                await self.coordinator.async_refresh()
+            await self.coordinator.async_refresh()
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="write_failed",
