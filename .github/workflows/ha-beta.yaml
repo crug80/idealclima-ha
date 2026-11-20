@@ -1,0 +1,30 @@
+name: Home Assistant Beta Check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ha-beta:
+    name: Test against latest Home Assistant beta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Sync with latest Home Assistant prerelease
+        run: >-
+          uv sync --prerelease=allow
+          --upgrade-package homeassistant
+          --upgrade-package pytest-homeassistant
+      - name: Print installed Home Assistant version
+        run: uv pip show homeassistant pytest-homeassistant
+      - name: Mypy
+        run: uv run mypy custom_components tests
+      - name: Pytest
+        run: uv run pytest

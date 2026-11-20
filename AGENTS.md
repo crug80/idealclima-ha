@@ -33,15 +33,14 @@ Guidelines for AI coding agents working in this Home Assistant custom integratio
    - Keep keys in `custom_components/idealclima/manifest.json` sorted alphabetically after `domain` and `name`.
 5. **Custom Integration & Git Workflow**:
    - Do not add a `quality_scale` key to `manifest.json` (reserved for `home-assistant/core`).
-   - Make changes on feature branches and submit via Pull Requests so CI (`Hassfest validation` and `HACS validation`) runs before merging to `main`.
+   - Make changes on feature branches and submit via Pull Requests so CI (`Tests`, `Hassfest validation`, and `HACS validation`) runs before merging to `main`.
 
 ## Verification Commands
 
 ```bash
-uv run --no-sync pytest
-uv run --no-sync ruff check .
-uv run --no-sync ruff format --check .
-uv run --no-sync mypy custom_components tests
+uv sync --locked
+uv run pytest
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy custom_components tests
 ```
-
-*(If `homeassistant` is installed via PEP 660 editable hook in `.venv`, pass `MYPYPATH=/path/to/core` when running `mypy` to resolve `homeassistant.*` types.)*
