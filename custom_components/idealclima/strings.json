@@ -176,6 +176,9 @@
     "unknown_running_mode": {
       "message": "Cannot set target temperature in auto mode because the active operating regime (cooling/heating) is unknown."
     },
+    "unsupported_hvac_mode": {
+      "message": "HVAC mode '{hvac_mode}' is not supported by this unit."
+    },
     "write_failed": {
       "message": "Failed to write settings to the Ideal Clima fan coil."
     }

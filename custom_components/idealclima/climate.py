@@ -354,6 +354,12 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
         new_mode = kwargs.get(ATTR_HVAC_MODE)
         if new_mode is not None:
             mode = HVACMode(new_mode)
+            if mode not in self.hvac_modes:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="unsupported_hvac_mode",
+                    translation_placeholders={"hvac_mode": mode},
+                )
             if mode is HVACMode.OFF:
                 calls.append(partial(self.device.async_set_power, False))
             else:

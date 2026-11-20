@@ -176,6 +176,9 @@
     "unknown_running_mode": {
       "message": "Impossibile impostare la temperatura target in modalità automatica perché il regime operativo attivo (raffreddamento/riscaldamento) è sconosciuto."
     },
+    "unsupported_hvac_mode": {
+      "message": "La modalità HVAC '{hvac_mode}' non è supportata da questa unità."
+    },
     "write_failed": {
       "message": "Impossibile scrivere le impostazioni sul ventilconvettore Ideal Clima."
     }
