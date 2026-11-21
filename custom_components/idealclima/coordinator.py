@@ -50,6 +50,7 @@ class IdealclimaDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         )
         self.device = device
         self.command_lock = asyncio.Lock()
+        self.last_update_report: UpdateReport | None = None
         model = IdealclimaModel(entry.data[CONF_MODEL])
         self.device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -63,16 +64,19 @@ class IdealclimaDataUpdateCoordinator(DataUpdateCoordinator[UpdateReport]):
         try:
             report = await self.device.async_update()
         except (ModbusConnectionError, ModbusTimeoutError) as err:
+            self.last_update_report = None
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="device_unreachable",
             ) from err
         except ModbusError as err:
+            self.last_update_report = None
             raise UpdateFailed(
                 translation_domain=DOMAIN,
                 translation_key="modbus_error",
             ) from err
 
+        self.last_update_report = report
         if not report.complete:
             first_error = next(iter(report.failed.values()))
             raise UpdateFailed(

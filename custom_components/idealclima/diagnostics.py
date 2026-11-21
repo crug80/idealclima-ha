@@ -6,12 +6,12 @@ from typing import Any
 from modbus_connection.model import Component
 
 from homeassistant.components.diagnostics import async_redact_data
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_DEVICE, CONF_HOST
 from homeassistant.core import HomeAssistant
 
 from .coordinator import IdealclimaConfigEntry
 
-TO_REDACT = {CONF_HOST}
+TO_REDACT = {CONF_DEVICE, CONF_HOST}
 
 
 def _serialize_component(component: Component) -> dict[str, Any]:
@@ -30,7 +30,7 @@ async def async_get_config_entry_diagnostics(
     """Return diagnostics for a config entry."""
     coordinator = entry.runtime_data
     device = coordinator.device
-    report = coordinator.data
+    report = coordinator.last_update_report
 
     return {
         "entry": {
@@ -59,6 +59,7 @@ async def async_get_config_entry_diagnostics(
                 {
                     "complete": report.complete,
                     "updated": sorted(report.updated),
+                    "failed": sorted(report.failed),
                 }
                 if report is not None
                 else None
