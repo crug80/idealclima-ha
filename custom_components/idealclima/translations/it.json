@@ -161,6 +161,9 @@
     }
   },
   "exceptions": {
+    "cannot_set_temperature_in_mode": {
+      "message": "Impossibile impostare la temperatura target quando la modalità HVAC è {hvac_mode}."
+    },
     "device_unreachable": {
       "message": "Impossibile raggiungere il ventilconvettore Ideal Clima via Modbus."
     },
