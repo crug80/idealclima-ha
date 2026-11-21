@@ -36,6 +36,11 @@ from homeassistant.components.climate import (
     SERVICE_TURN_ON,
     HVACMode,
 )
+from homeassistant.components.number import (
+    ATTR_VALUE,
+    DOMAIN as NUMBER_DOMAIN,
+    SERVICE_SET_VALUE,
+)
 from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_TEMPERATURE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -1051,6 +1056,58 @@ async def test_device_command_lock_serializes_across_platforms(
         unsub()
 
     assert writes == [28302, 28310, 28301, 28305]
+
+
+async def test_set_temperature_revalidates_bounds_under_command_lock(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test set_temperature re-checks live bounds after waiting on command_lock."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    coordinator = init_integration.runtime_data
+    max_write_started = asyncio.Event()
+    release_max_write = asyncio.Event()
+    original_set_max = coordinator.device.async_set_max_target_temp
+
+    async def _slow_set_max(value: float) -> None:
+        max_write_started.set()
+        await release_max_write.wait()
+        await original_set_max(value)
+
+    with patch.object(coordinator.device, "async_set_max_target_temp", _slow_set_max):
+        max_task = asyncio.create_task(
+            hass.services.async_call(
+                NUMBER_DOMAIN,
+                SERVICE_SET_VALUE,
+                {
+                    ATTR_ENTITY_ID: (
+                        "number.radiantore_skudo_dc_inverter_21_maximum_target_temperature"
+                    ),
+                    ATTR_VALUE: 24.0,
+                },
+                blocking=True,
+            )
+        )
+        await max_write_started.wait()
+        # Core validates 29.0 against the still-30.0 max_temp, then waits on lock
+        climate_task = asyncio.create_task(
+            hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {ATTR_ENTITY_ID: SKUDO_ENTITY_ID, ATTR_TEMPERATURE: 29.0},
+                blocking=True,
+            )
+        )
+        await asyncio.sleep(0)
+        release_max_write.set()
+        await max_task
+        with pytest.raises(ServiceValidationError) as err_info:
+            await climate_task
+
+    assert err_info.value.translation_key == "temperature_out_of_range"
+    assert unit.holding[28308] == 240
+    assert unit.holding[28311] == 205
 
 
 async def test_none_settings_handling(

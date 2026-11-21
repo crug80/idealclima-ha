@@ -176,6 +176,9 @@
     "modbus_error": {
       "message": "Modbus error while communicating with the Ideal Clima fan coil."
     },
+    "temperature_out_of_range": {
+      "message": "Target temperature {temperature} °C is outside the allowed range ({min_temp}–{max_temp} °C)."
+    },
     "unknown_running_mode": {
       "message": "Cannot set target temperature in auto mode because the active operating regime (cooling/heating) is unknown."
     },

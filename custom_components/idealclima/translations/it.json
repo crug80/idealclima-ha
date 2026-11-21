@@ -176,6 +176,9 @@
     "modbus_error": {
       "message": "Errore Modbus durante la comunicazione con il ventilconvettore Ideal Clima."
     },
+    "temperature_out_of_range": {
+      "message": "La temperatura target {temperature} °C è fuori dall'intervallo consentito ({min_temp}–{max_temp} °C)."
+    },
     "unknown_running_mode": {
       "message": "Impossibile impostare la temperatura target in modalità automatica perché il regime operativo attivo (raffreddamento/riscaldamento) è sconosciuto."
     },
