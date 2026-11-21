@@ -380,14 +380,11 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             and temperature is not None
         ):
             async with self.coordinator.command_lock:
-                if new_mode is not None:
-                    if turn_on:
-                        calls.append(partial(self.device.async_set_power, True))
-                    await self._async_execute_locked(*calls)
                 await self._async_read_skudo_readings(self.device)
-                await self._async_execute_locked(
-                    self._skudo_auto_temp_call(self.device, temperature)
-                )
+                calls.append(self._skudo_auto_temp_call(self.device, temperature))
+                if turn_on:
+                    calls.append(partial(self.device.async_set_power, True))
+                await self._async_execute_locked(*calls)
             return
 
         if temperature is not None:
