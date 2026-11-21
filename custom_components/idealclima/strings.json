@@ -161,6 +161,9 @@
     }
   },
   "exceptions": {
+    "cannot_set_temperature_in_mode": {
+      "message": "Cannot set target temperature while HVAC mode is {hvac_mode}."
+    },
     "device_unreachable": {
       "message": "Unable to reach the Ideal Clima fan coil over Modbus."
     },

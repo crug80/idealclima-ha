@@ -102,7 +102,7 @@ async def test_ikaro_climate_initial_state(
     ("hvac_mode", "expected_mode_reg", "expected_target_temp"),
     [
         pytest.param(HVACMode.COOL, 1, 25.5, id="cool"),
-        pytest.param(HVACMode.DRY, 2, 25.5, id="dry"),
+        pytest.param(HVACMode.DRY, 2, None, id="dry"),
         pytest.param(HVACMode.FAN_ONLY, 3, None, id="fan_only"),
         pytest.param(HVACMode.HEAT, 4, 20.5, id="heat"),
         pytest.param(HVACMode.AUTO, 0, 20.0, id="auto_heat"),
@@ -498,7 +498,6 @@ async def test_set_fan_mode(
     ("initial_mode_reg", "temperature", "expected_reg"),
     [
         pytest.param(1, 24.0, 28310, id="cool"),
-        pytest.param(2, 23.5, 28310, id="dry"),
         pytest.param(4, 21.5, 28311, id="heat"),
         pytest.param(0, 19.5, 28313, id="auto_heat"),
     ],
@@ -633,6 +632,89 @@ async def test_set_temperature_rejects_unsupported_hvac_mode(
         unsub()
 
     assert writes == []
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "hvac_mode"),
+    [
+        pytest.param(SKUDO_ENTITY_ID, HVACMode.OFF, id="skudo_off"),
+        pytest.param(SKUDO_ENTITY_ID, HVACMode.DRY, id="skudo_dry"),
+        pytest.param(SKUDO_ENTITY_ID, HVACMode.FAN_ONLY, id="skudo_fan_only"),
+        pytest.param(IKARO_ENTITY_ID, HVACMode.OFF, id="ikaro_off"),
+        pytest.param(IKARO_ENTITY_ID, HVACMode.DRY, id="ikaro_dry"),
+        pytest.param(IKARO_ENTITY_ID, HVACMode.FAN_ONLY, id="ikaro_fan_only"),
+    ],
+)
+async def test_set_temperature_rejects_modes_without_setpoint(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    init_ikaro_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+    entity_id: str,
+    hvac_mode: HVACMode,
+) -> None:
+    """Test temperature-only call raises ServiceValidationError in OFF/DRY/FAN_ONLY."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_SET_HVAC_MODE,
+        {ATTR_ENTITY_ID: entity_id, ATTR_HVAC_MODE: hvac_mode},
+        blocking=True,
+    )
+    assert (state := hass.states.get(entity_id)) is not None
+    assert state.attributes.get(ATTR_TEMPERATURE) is None
+
+    writes: list[int] = []
+    unsub = unit.on_write(lambda event: writes.append(event.address))
+    try:
+        with pytest.raises(ServiceValidationError) as err_info:
+            await hass.services.async_call(
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {ATTR_ENTITY_ID: entity_id, ATTR_TEMPERATURE: 22.5},
+                blocking=True,
+            )
+    finally:
+        unsub()
+
+    assert err_info.value.translation_key == "cannot_set_temperature_in_mode"
+    assert writes == []
+
+
+async def test_set_temperature_with_dry_hvac_mode_changes_mode_only(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_connection: MockModbusConnection,
+) -> None:
+    """Test set_temperature with hvac_mode=DRY switches mode without writing 28310."""
+    unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID},
+        blocking=True,
+    )
+    writes: list[tuple[int, list[int] | list[bool]]] = []
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
+    try:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                ATTR_HVAC_MODE: HVACMode.DRY,
+                ATTR_TEMPERATURE: 23.0,
+            },
+            blocking=True,
+        )
+    finally:
+        unsub()
+
+    assert writes == [
+        (28302, [2]),
+        (28301, [1]),
+    ]
+    assert unit.holding[28310] == 255
 
 
 async def test_ikaro_set_temperature_writes_setpoint_before_power_on(

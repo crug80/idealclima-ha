@@ -226,7 +226,7 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
     def native_target_temperature(self) -> float | None:
         """Return the active target temperature for the current HVAC mode."""
         mode = self.hvac_mode
-        if mode in (HVACMode.COOL, HVACMode.DRY):
+        if mode is HVACMode.COOL:
             return self.device.settings.target_temp_cool
         if mode is HVACMode.HEAT:
             return self.device.settings.target_temp_heat
@@ -254,7 +254,7 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
                     mode, self.device.readings.ambient_temperature
                 ),
             )
-        if mode in (HVACMode.COOL, HVACMode.DRY):
+        if mode is HVACMode.COOL:
             current = self.device.settings.target_temp_cool
             if current is not None and DEFAULT_MIN_TEMP <= current <= DEFAULT_MAX_TEMP:
                 return None
@@ -388,13 +388,21 @@ class IdealclimaClimateEntity(IdealclimaEntity, ClimateEntity):
             return
 
         if temperature is not None:
-            if mode in (HVACMode.COOL, HVACMode.DRY):
+            if mode is HVACMode.COOL:
                 calls.append(
                     partial(self.device.async_set_target_temp_cool, temperature)
                 )
             elif mode is HVACMode.HEAT:
                 calls.append(
                     partial(self.device.async_set_target_temp_heat, temperature)
+                )
+            elif new_mode is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="cannot_set_temperature_in_mode",
+                    translation_placeholders={
+                        "hvac_mode": mode.value if mode is not None else "unknown"
+                    },
                 )
 
         if turn_on:
