@@ -8,7 +8,7 @@ import warnings
 
 from freezegun.api import FrozenDateTimeFactory
 from modbus_connection import ModbusError, ModbusTimeoutError
-from modbus_connection.mock import MockModbusConnection, WriteEvent
+from modbus_connection.mock import MockModbusConnection
 import pytest
 from pytest_homeassistant.common import MockConfigEntry, async_fire_time_changed
 
@@ -204,7 +204,7 @@ async def test_skudo_contextual_switch_to_auto_uses_refreshed_running_mode(
     init_integration: MockConfigEntry,
     mock_connection: MockModbusConnection,
 ) -> None:
-    """Test set_temperature switching to AUTO polls 46807 before writing setpoint."""
+    """Test set_temperature switching to AUTO reads 46807 and turns on last."""
     unit = mock_connection.for_unit(MOCK_UNIT_ID)
     await hass.services.async_call(
         CLIMATE_DOMAIN,
@@ -212,14 +212,10 @@ async def test_skudo_contextual_switch_to_auto_uses_refreshed_running_mode(
         {ATTR_ENTITY_ID: SKUDO_ENTITY_ID},
         blocking=True,
     )
-    # Initial cached running_mode is HEAT (1); switching to AUTO flips 46807 to COOL (0)
-    unsub = unit.on_write(
-        lambda event: (
-            unit.input.__setitem__(46807, 0)
-            if event.address == 28302 and event.values == [0]
-            else None
-        )
-    )
+    # Initial cached running_mode is HEAT (1); hardware flipped 46807 to COOL (0)
+    unit.input[46807] = 0
+    writes: list[tuple[int, list[int] | list[bool]]] = []
+    unsub = unit.on_write(lambda event: writes.append((event.address, event.values)))
     try:
         await hass.services.async_call(
             CLIMATE_DOMAIN,
@@ -234,6 +230,11 @@ async def test_skudo_contextual_switch_to_auto_uses_refreshed_running_mode(
     finally:
         unsub()
 
+    assert writes == [
+        (28302, [0]),
+        (28312, [245]),
+        (28301, [1]),
+    ]
     assert unit.holding[28301] == 1
     assert unit.holding[28302] == 0
     assert unit.holding[28312] == 245
@@ -309,32 +310,31 @@ async def test_skudo_contextual_switch_to_auto_aborts_when_readings_refresh_fail
     init_integration: MockConfigEntry,
     mock_connection: MockModbusConnection,
 ) -> None:
-    """Test switching to AUTO with temperature aborts setpoint if 46807 read fails."""
+    """Test switching from OFF to AUTO aborts without powering on if 46807 fails."""
     unit = mock_connection.for_unit(MOCK_UNIT_ID)
+    await hass.services.async_call(
+        CLIMATE_DOMAIN,
+        SERVICE_TURN_OFF,
+        {ATTR_ENTITY_ID: SKUDO_ENTITY_ID},
+        blocking=True,
+    )
+    unit.fail_read(46807, ModbusTimeoutError("timeout"), register_type="input")
 
-    def _on_write(event: WriteEvent) -> None:
-        if event.address == 28302 and event.values == [0]:
-            unit.input[46807] = 0
-            unit.fail_read(46807, ModbusTimeoutError("timeout"), register_type="input")
-
-    unsub = unit.on_write(_on_write)
-    try:
-        with pytest.raises(HomeAssistantError) as err_info:
-            await hass.services.async_call(
-                CLIMATE_DOMAIN,
-                SERVICE_SET_TEMPERATURE,
-                {
-                    ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
-                    ATTR_HVAC_MODE: HVACMode.AUTO,
-                    ATTR_TEMPERATURE: 24.5,
-                },
-                blocking=True,
-            )
-    finally:
-        unsub()
+    with pytest.raises(HomeAssistantError) as err_info:
+        await hass.services.async_call(
+            CLIMATE_DOMAIN,
+            SERVICE_SET_TEMPERATURE,
+            {
+                ATTR_ENTITY_ID: SKUDO_ENTITY_ID,
+                ATTR_HVAC_MODE: HVACMode.AUTO,
+                ATTR_TEMPERATURE: 24.5,
+            },
+            blocking=True,
+        )
 
     assert isinstance(err_info.value.__cause__, ModbusError)
-    assert unit.holding[28302] == 0
+    assert unit.holding[28301] == 0
+    assert unit.holding[28302] == 4
     assert unit.holding[28312] == 260
     assert unit.holding[28313] == 200
 
