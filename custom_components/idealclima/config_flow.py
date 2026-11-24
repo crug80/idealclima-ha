@@ -106,6 +106,12 @@ async def _async_probe(hass: HomeAssistant, data: Mapping[str, Any]) -> None:
         device = create_device(unit, data)
         report = await device.async_update()
         if not report.complete:
+            _LOGGER.debug(
+                "Incomplete probe for unit %s (updated=%s, failed=%s)",
+                data[CONF_UNIT_ID],
+                sorted(report.updated),
+                report.failed,
+            )
             raise next(iter(report.failed.values()))
 
 
@@ -188,9 +194,23 @@ class IdealclimaConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 try:
                     await _async_probe(self.hass, data)
-                except ModbusError:
+                except ModbusError as err:
+                    _LOGGER.debug(
+                        "Failed to probe %s unit %s (%s): %s",
+                        params.endpoint,
+                        unit_id,
+                        type(err).__name__,
+                        err,
+                    )
                     errors["base"] = "cannot_connect"
                 except HomeAssistantError as err:
+                    _LOGGER.debug(
+                        "Failed to acquire %s unit %s (%s): %s",
+                        params.endpoint,
+                        unit_id,
+                        type(err).__name__,
+                        err,
+                    )
                     errors["base"] = (
                         "device_in_use"
                         if err.translation_key == "device_in_use"
